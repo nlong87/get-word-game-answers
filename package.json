@@ -1,0 +1,30 @@
+{
+  "name": "get-word-game-answers",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "cross-env NODE_ENV=development node --watch src/index.js",
+    "deploy": "gcloud builds submit --tag us-central1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers && gcloud run deploy get-word-game-answers --image us-central1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers --region us-central1 --memory 2Gi --cpu 1 --timeout 300 --no-allow-unauthenticated --set-env-vars NODE_ENV=production",
+    "logs": "gcloud run services logs read get-word-game-answers --region us-central1 --limit 50"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.0.0",
+    "@sparticuz/chromium": "^143.0.4",
+    "color-name-list": "^14.27.0",
+    "dotenv": "^17.3.1",
+    "express": "^4.18.2",
+    "https-proxy-agent": "^7.0.6",
+    "jsdom": "^27.1.0",
+    "json5": "^2.2.3",
+    "moment": "^2.29.5",
+    "node-fetch": "^3.3.2",
+    "puppeteer": "^24.18.0",
+    "puppeteer-core": "^24.0.0",
+    "wpapi": "^1.2.2"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
+  }
+}

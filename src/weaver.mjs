@@ -1,0 +1,125 @@
+import fetch from "node-fetch";
+import {getDateDisplay, getDayDifference} from "./helpers.mjs";
+
+const base_script = "https://wordwormdormdork.com";
+const start_puzzle_date = "September 25 2023";
+const start_puzzle_number = 1;
+const scheduled_time = {
+    'hours': 0,
+    'minutes': 0
+};
+
+async function getScriptUrl() {
+    
+    return fetch(base_script)
+        .then((response) => response.text())
+        .then(text => {
+                
+                const matches = text.match(/\/static\/js\/main\.\w+\.js/);
+                
+                return (matches) ? base_script + matches[0] : false;
+                
+            }
+        );
+    
+}
+
+async function getAnswersFromSite() {
+    
+    let script_url = '';
+    await getScriptUrl().then(r => script_url = r);
+    
+    return fetch(script_url)
+        .then((response) => response.text())
+        .then(text => {
+                
+                const matches = text.match(/var \w=\w\(\d+\);const \w=(\[.*?]).map/);
+                const array = eval(matches[1]);
+                
+                return (Array.isArray(array)) ? array : false;
+                
+            }
+        );
+    
+}
+
+function trimData( answers ) {
+    
+    // The date that the search sequence starts at
+    let start_date = "10/31/2023";
+    
+    // The puzzle sequence to look for, this one starts on Valentines Day and gets the 3 following days
+    // It should be unlikely that this sequence occurs any other time
+    let search_answers = [
+        [ 'trick', 'treat' ],
+        [ 'lock', 'seal' ],
+        [ 'easy', 'calm' ],
+        [ 'weld', 'fuse' ]
+    ];
+    
+    // Return the index that the sequence starts in
+    let sequenceIndex = findSequenceInArray( answers, search_answers );
+    
+    if ( sequenceIndex ) {
+        
+        // Slice the data that the sequence begins, that way if they ever remove old pairs, our code will still function.
+        return {
+            'start_date': start_date,
+            'answers': answers.slice( sequenceIndex )
+        };
+    } else {
+        return false;
+    }
+    
+}
+
+function findSequenceInArray(array, sequence) {
+    for(let index = 0; index < array.length; index++) {
+        if(sequence.every((sequenceValue, sequenceIndex) => sequenceValue[0] === array[index + sequenceIndex][0] && sequenceValue[1] === array[index + sequenceIndex][1])) {
+            return index;
+        }
+    }
+    
+    return -1; // return -1 if the sequence was not found
+}
+
+export async function getAnswers( date_string, number_to_get ) {
+    
+    const published = new Date( date_string );
+    const scheduled = published;
+    scheduled.setHours( scheduled_time.hours );
+    scheduled.setMinutes( scheduled_time.minutes );
+    
+    const diff = getDayDifference( start_puzzle_date, published.toDateString() );
+    const start = start_puzzle_number + diff;
+    
+    let answers = [];
+    const all_answers = await getAnswersFromSite();
+    
+    if ( ! all_answers ) {
+        return false;
+    }
+    
+    // Trim the array of answers to a set date so it's more predictable
+    const data = trimData( all_answers );
+    
+    if ( !data ) {
+        return false;
+    }
+    
+    // Get the difference from the start sequence and the target date
+    const sliceIndex = getDayDifference( data.start_date, date_string );
+    
+    // Slice the answers based on that difference and map the answer array into a comma separated string
+    answers = data.answers.slice( sliceIndex, sliceIndex+number_to_get ).map( x => x[3].join(', ') );
+    
+    return {
+        'type': 'Weaver',
+        'publishedDate': getDateDisplay( published ),
+        'scheduledDate': getDateDisplay( scheduled, true ),
+        'startingNumber': start,
+        'answers': answers
+    };
+    
+}
+// await getAnswers('August 16 2024', 7).then(r => console.dir(r) )
