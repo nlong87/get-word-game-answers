@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "cross-env NODE_ENV=development node --watch src/index.js",
-    "deploy": "gcloud builds submit --tag us-central1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers && gcloud run deploy get-word-game-answers --image us-central1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers --region us-central1 --memory 2Gi --cpu 1 --timeout 300 --no-allow-unauthenticated --set-env-vars NODE_ENV=production",
+    "deploy": "gcloud builds submit --tag us-central1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers && gcloud run deploy get-word-game-answers --image us-central1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers --region us-central1 --memory 2Gi --cpu 1 --timeout 300 --no-allow-unauthenticated --set-env-vars NODE_ENV=production --concurrency 1",
+    "deploy2": "gcloud run deploy get-word-game-answers --source . --region us-central1 --platform managed --memory 2Gi --cpu 1 --timeout 300 --concurrency 1 --allow-unauthenticated --port 8080",
     "logs": "gcloud run services logs read get-word-game-answers --region us-central1 --limit 50"
   },
   "dependencies": {
@@ -22,7 +23,10 @@
     "node-fetch": "^3.3.2",
     "puppeteer": "^24.18.0",
     "puppeteer-core": "^24.0.0",
-    "wpapi": "^1.2.2"
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "wpapi": "^1.2.2",
+    "xvfb": "^0.4.0"
   },
   "devDependencies": {
     "cross-env": "^10.1.0"

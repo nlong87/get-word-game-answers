@@ -1,12 +1,22 @@
 import 'dotenv/config';
 import express from 'express';
 import WPAPI from 'wpapi';
+import {startXvfb} from "./browser.mjs";
 import {get_answers} from "./get-answers.mjs";
 import {midnightInZone, utcYMD} from "./helpers.mjs";
 
+const PORT = process.env.PORT || 8080;
 const app = express();
-app.use(express.json());
 const isProd = process.env.NODE_ENV === 'production';
+
+app.use(express.json());
+app.listen(PORT, () => {
+    console.log(`Listening on port ${PORT}`);
+    if ( isProd ) {
+        startXvfb();
+    }
+});
+
 
 export async function manual_post_answers(puzzle_type, amount_to_return = 8, start_date = null) {
     
@@ -108,10 +118,9 @@ export async function process_answers(type, amount_to_return, start_date = null)
 
 async function post_data(data) {
     
-    const endpoint = "https://tryhardguides.com/wp-json";
-    
-    const username = 'restapi';
-    const password = 'MYYj At1u GBEo HILY lKCe QWZk';
+    const endpoint = process.env.REST_ENDPOINT;
+    const username = process.env.REST_USERNAME;
+    const password = process.env.REST_PASSWORD;
     
     let wp = new WPAPI({
         endpoint: endpoint,
@@ -161,7 +170,4 @@ app.post('/post_answers', async (req, res) => {
         res.send(false);
     }
     
-})
-
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
+});

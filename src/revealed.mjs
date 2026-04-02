@@ -1,11 +1,11 @@
-import fetch from "node-fetch";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import {
     dayDiff,
     getUTCDateDisplay,
     midnightInZone,
     modifyDays,
-    setTimeInZone, utcYMD
+    utcYMD
 } from "./helpers.mjs";
 
 const revealed_url = "https://www.britannica.com/games/revealed";
@@ -98,30 +98,44 @@ function extractGameData(html) {
 async function getResponseText() {
     
     let response;
+    let text;
     if (process.env.NODE_ENV === 'production') {
         
-        const agent = new HttpsProxyAgent(
-            `https://${process.env.PROXY_USERNAME}:${process.env.PROXY_PASSWORD}@unblock.oxylabs.io:60000`
-        );
+        puppeteer.use(StealthPlugin());
         
-        // We recommend accepting our certificate instead of allowing insecure (http) traffic
-        process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = 0;
-        
-        const headers = {
-            'X-Oxylabs-Render': 'html',
-        }
-        
-        response = await fetch(revealed_url, {
-            method: 'get',
-            headers: headers,
-            agent: agent,
+        const browser = await puppeteer.launch({
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox'
+            ],
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
         });
+        const page = await browser.newPage();
+        
+        const realUA = await browser.userAgent();
+        const patchedUA = realUA.replace('HeadlessChrome', 'Chrome');
+        
+        const client = await page.createCDPSession();
+        await client.send('Network.setUserAgentOverride', {
+            userAgent: patchedUA,
+        });
+        
+        response = await page.goto(revealed_url, {
+            timeout: 60000,
+            waitUntil: 'domcontentloaded',
+        });
+        
+        text = await response.text();
+        
+        await browser.close();
         
     } else {
         response = await fetch(revealed_url);
+        
+        text = await response.text();
     }
     
-    return await response.text();
+    return text;
 }
 
 async function getGameData() {
@@ -148,12 +162,10 @@ export async function getAnswers( date_string, number_to_get ) {
     let answers = [];
     
     const published = midnightInZone( date_string, reset_timezone );
-    const scheduled = setTimeInZone(
-        modifyDays( published, 1, false ),
-        scheduled_time.hours,
-        scheduled_time.minutes,
-        reset_timezone
-    );
+    let scheduled = modifyDays( published, 1, false);
+    scheduled.setHours( scheduled_time.hours );
+    scheduled.setMinutes( scheduled_time.minutes );
+    
     
     const diff = dayDiff( published, start_puzzle_date );
     const start = start_puzzle_number + diff;
@@ -180,4 +192,3 @@ export async function getAnswers( date_string, number_to_get ) {
     };
     
 }
-// await getAnswers('2026-03-24', 2).then( result => console.log(result) );

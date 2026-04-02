@@ -1,256 +1,161 @@
-import fetch from "node-fetch";
-import {addDays, getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
-import puppeteer from "puppeteer";
+import {
+    getDayDifference,
+    getUTCDateDisplay,
+    midnightInZone,
+    modifyDays, setTimeInZone
+} from "./helpers.mjs";
+import {launchBrowser} from "./browser.mjs";
 
-const start_puzzle_date = "July 14 2025";
-const start_puzzle_number = 316;
+const reset_timezone = 'Etc/UTC';
+const start_puzzle_date = midnightInZone('2025-07-14', reset_timezone);
+const start_puzzle_number = 317;
 const scheduled_time = {
     'hours': 18,
     'minutes': 0
 };
 
 function getFormattedDate( date ) {
-    let year = date.getFullYear();
+    let year = date.getUTCFullYear();
     
-    let month = (1 + date.getMonth()).toString();
+    let month = (1 + date.getUTCMonth()).toString();
     month = month.length > 1 ? month : '0' + month;
     
-    let day = date.getDate().toString();
+    let day = date.getUTCDate().toString();
     day = day.length > 1 ? day : '0' + day;
     
     return year + '-' + month + '-' + day;
 }
 
-async function getAnswerFromSite( date_string ) {
-    const browser = await puppeteer.launch({ headless: true });
+async function getAnswerFromSite(date_string) {
+    const browser = await launchBrowser();
     const page = await browser.newPage();
-    
-    // (Optional but often helps) reduce “body missing” cases caused by caching
     await page.setCacheEnabled(false);
     
-    page.on("response", async (res) => {
-        const url = res.url();
-        
-        if (url.includes("firestore.googleapis.com")) {
-            console.log("🔥 Firestore response:", url);
-            console.log(res.text());
-            try {
-                const json = await res.text();
-                console.log("📄 Firestore JSON:", json);
-            } catch (e) {
-                console.log("Non‑JSON response");
+    const client = await page.createCDPSession();
+    await client.send("Network.enable");
+    
+    let resolveAnswer;
+    
+    const answerPromise = new Promise((resolve, reject) => {
+        resolveAnswer = resolve;
+        setTimeout(() => reject(new Error("Timeout waiting for Firestore answer")), 20000);
+    });
+    
+    await client.send("Fetch.enable", {
+        patterns: [
+            {
+                urlPattern: "*google.firestore.v1.Firestore/Listen*AID=0*TYPE=xmlhttp*",
+                requestStage: "Response"
             }
-        }
-    });
-    
-    
-    await page.goto("https://letroso.com/en/previous/" + date_string, {
-        waitUntil: "networkidle2",
-    });
-    
-    // Keep the browser open long enough for async Firestore calls
-    await new Promise(r => setTimeout(r, 5000));
-    
-    
-    /*
-
-    const match = response_text.match(/"answer":\s*{\s*"stringValue":\s*"(.*?)"/i);
-    if (!match) {
-        throw new Error("Could not find answer in Firestore response");
-    }
-    */
-    
-    
-    await browser.close();
-    
-    
-    
-    
-}
-
-async function runCapture(date_string) {
-    const url = "https://letroso.com/en/previous/" + date_string;
-    const browser = await puppeteer.launch({
-        headless: true,
-        args: [
-            "--disable-service-worker",
-            "--disable-features=InterestCohort"
         ]
     });
     
-    const page = await browser.newPage();
-    await page.setCacheEnabled(false);
-    
-    // Node-side: receive decoded Firestore messages from the page
-    await page.exposeFunction("captureFirestoreMessage", (payload) => {
-        // payload is already JSON-serializable
-        console.log("🔥 FIRESTORE MESSAGE:", JSON.stringify(payload, null, 2));
-    });
-    
-    // Optional: page console (filter noise)
-    page.on("console", (msg) => {
-        const text = msg.text();
-        if (text.includes("Audigent") || text.includes("__gpp")) return;
-        console.log("PAGE:", text);
-    });
-    
-    // Install BrowserChannel patch on every new document
-    await page.evaluateOnNewDocument(function () {
-        console.log(">>> NEW DOCUMENT PATCH INSTALLED");
+    client.on("Fetch.requestPaused", async (event) => {
+        const { requestId, request } = event;
         
-        var origOpen = XMLHttpRequest.prototype.open;
-        var origSend = XMLHttpRequest.prototype.send;
+        const isTarget =
+            request.url.includes("google.firestore.v1.Firestore/Listen") &&
+            request.url.includes("AID=0&") &&
+            request.url.includes("TYPE=xmlhttp");
         
-        XMLHttpRequest.prototype.open = function (method, url) {
-            // Detect the Firestore GET channel
-            this.__isFirestoreListen =
-                typeof url === "string" &&
-                url.indexOf("google.firestore.v1.Firestore/Listen") !== -1 &&
-                method === "GET";
-            
-            return origOpen.apply(this, arguments);
-        };
-        
-        XMLHttpRequest.prototype.send = function (body) {
-            if (this.__isFirestoreListen) {
-                var xhr = this;
-                
-                var origOnReadyStateChange = xhr.onreadystatechange;
-                xhr.onreadystatechange = function () {
-                    try {
-                        // readyState 3 = LOADING (incremental data available)
-                        if (xhr.readyState === 3) {
-                            var text = xhr.responseText;
-                            if (text && text.trim()) {
-                                // Send raw chunk to Node
-                                if (window.captureFirestoreChunk) {
-                                    window.captureFirestoreChunk(text);
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        // swallow errors
-                    }
-                    
-                    if (origOnReadyStateChange) {
-                        return origOnReadyStateChange.apply(this, arguments);
-                    }
-                };
+        if (!isTarget) {
+            try {
+                await client.send("Fetch.continueResponse", { requestId });
+            } catch (e) {
+                // Browser already closed, ignore
             }
+            return;
+        }
+        
+        try {
+            const { body, base64Encoded } = await client.send("Fetch.getResponseBody", { requestId });
             
-            return origSend.apply(this, arguments);
-        };
+            const decoded = base64Encoded
+                ? Buffer.from(body, "base64").toString("utf8")
+                : body;
+            
+            const messages = parseBrowserChannel(decoded);
+            
+            for (const msg of messages) {
+                if (msg.documentChange?.document?.fields?.answer?.stringValue) {
+                    const answer = msg.documentChange.document.fields.answer.stringValue;
+                    resolveAnswer(answer);
+                }
+            }
+        } catch (e) {
+            if (!e.message.includes("Target closed") && !e.message.includes("Session closed")) {
+                console.warn("getResponseBody failed:", e.message);
+            }
+        }
+        
+        // Always try to continue, but don't crash if browser is already closed
+        try {
+            await client.send("Fetch.continueResponse", { requestId });
+        } catch (e) {
+            // Browser closed between getResponseBody and continueResponse — expected
+        }
     });
     
+    await page.goto(
+        "https://letroso.com/en/previous/" + date_string,
+        { waitUntil: "domcontentloaded" }
+    );
     
-    // Navigate
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    
-    console.log("Waiting for Firestore BrowserChannel messages…");
-    
-    // Keep process alive to receive messages
-    await new Promise((resolve) => setTimeout(resolve, 600000));
-    
-    await browser.close();
-    
+    try {
+        const answer = await answerPromise;
+        await browser.close();
+        return answer;
+    } catch (err) {
+        await browser.close();
+        throw err;
+    }
     
 }
 
-async function run(date_string) {
-    const TARGET = "firestore.googleapis.com"; // the XHR you want
+function parseBrowserChannel(raw) {
+    const results = [];
+    let remaining = raw;
     
-    const browser = await puppeteer.launch({ headless: true });
-    const page = await browser.newPage();
-    
-    await page.exposeFunction("captureSnapshot", data => {
-        console.log("Snapshot:", data);
-    });
-    
-    await page.evaluateOnNewDocument(() => {
-        // This runs before any page JS executes
-        window.__patchFirestore = () => {
-            const orig = firebase.firestore().DocumentReference.prototype.onSnapshot;
-            
-            firebase.firestore().DocumentReference.prototype.onSnapshot = function (cb) {
-                return orig.call(this, (snap) => {
-                    try {
-                        window.captureSnapshot(snap.data());
-                    } catch (e) {
-                        console.warn("captureSnapshot failed:", e);
-                    }
-                    cb(snap);
-                });
-            };
-        };
-    });
-    
-    
-    // Capture the request
-    page.on("request", async (req) => {
-        if (req.url().includes(TARGET) && req.url().includes('AID=0')) {
-            console.log("🔥 XHR Request URL:", req.url());
-            console.log("Method:", req.method());
-            console.log("Request Headers:", req.headers());
-            
-            if (req.postData()) {
-                console.log("POST Body:", req.postData());
-            }
-            
-            const method = req.method();
-            const postData = req.postData();
-            const headers = req.headers();
-            
-            
-            const replay = await fetch(req.url(), {
-                method,
-                headers,
-                body: postData
-            });
-            
-            const text = await replay.text();
-            console.log("Replayed response:", text);
-            
+    while (remaining.length > 0) {
+        const newlineIdx = remaining.indexOf("\n");
+        if (newlineIdx === -1) break;
+        
+        const lengthStr = remaining.slice(0, newlineIdx).trim();
+        const byteLength = parseInt(lengthStr, 10);
+        
+        if (isNaN(byteLength)) {
+            remaining = remaining.slice(newlineIdx + 1);
+            continue;
         }
-    });
-    
-    // Capture the response
-    page.on("response", async (res) => {
-        if (res.url().includes(TARGET) && res.url().includes('AID=0')) {
-            console.log("🔥 XHR Response URL:", res.url());
-            console.log("Status:", res.status());
-            
-            
-        }
-    });
-    
-    await page.goto("https://letroso.com/en/previous/" + date_string, {
-        waitUntil: "networkidle2",
-    });
-    
-    
-    await page.evaluate(() => {
-        // Wait until firebase is available
-        const interval = setInterval(() => {
-            if (window.firebase?.firestore) {
-                clearInterval(interval);
-                window.__patchFirestore();
+        
+        const payloadStart = newlineIdx + 1;
+        const payloadEnd = payloadStart + byteLength;
+        if (payloadEnd > remaining.length) break;
+        
+        const payloadStr = remaining.slice(payloadStart, payloadEnd).trim();
+        remaining = remaining.slice(payloadEnd);
+        
+        try {
+            const frames = JSON.parse(payloadStr);
+            for (const [seqNum, messages] of frames) {
+                for (const msg of messages) {
+                    // Skip non-object messages like "noop"
+                    if (typeof msg !== "object" || msg === null) continue;
+                    results.push({ seq: seqNum, ...msg });
+                }
             }
-        }, 50);
-    });
+        } catch (e) {
+            console.warn("Parse error:", e.message, payloadStr.slice(0, 80));
+        }
+    }
     
-    
-    await page.waitForResponse(res =>
-        res.url().includes("firestore.googleapis.com") && res.url().includes("AID=0")
-    );
-    await browser.close();
+    return results;
 }
 
 export async function getAnswers( date_string, number_to_get ) {
     
-    const published = new Date( date_string );
-    const scheduled = subDays( published, 1 );
-    scheduled.setHours( scheduled_time.hours );
-    scheduled.setMinutes( scheduled_time.minutes );
+    const published = midnightInZone(date_string, reset_timezone);
+    const scheduled = setTimeInZone( modifyDays( published, 1, false), scheduled_time.hours, scheduled_time.minutes, reset_timezone );
     
     const diff = getDayDifference( start_puzzle_date, published.toDateString() );
     const start = start_puzzle_number + diff;
@@ -259,7 +164,7 @@ export async function getAnswers( date_string, number_to_get ) {
     let i = 0;
     while( i < number_to_get ) {
         
-        let puzzleDate = addDays( date_string, i );
+        let puzzleDate = modifyDays( published, i );
         let _date = getFormattedDate( puzzleDate );
         let answer = await getAnswerFromSite( _date );
         
@@ -273,12 +178,10 @@ export async function getAnswers( date_string, number_to_get ) {
     
     return {
         'type': 'Letroso',
-        'publishedDate': getDateDisplay( published ),
-        'scheduledDate': getDateDisplay( scheduled, true ),
+        'publishedDate': getUTCDateDisplay( published ),
+        'scheduledDate': getUTCDateDisplay( scheduled, true ),
         'startingNumber': start,
         'answers': answers
     };
     
 }
-// await getAnswers('2026-03-23 02:00:00 GMT-0700', 1).then( result => console.log(result) );
-//await runCapture('2026-01-10', 1).then( result => console.log(result) );
