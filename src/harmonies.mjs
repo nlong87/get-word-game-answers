@@ -66,6 +66,10 @@ async function getAnswerFromDate( date ) {
     let answers = [];
     let extra = [];
     
+    if ( !answer || !answer.hasOwnProperty('categories') ) {
+        return {};
+    }
+    
     answer.categories.forEach(category => {
         answers.push( category.name );
         if ( typeof category.elements[0] === 'object'  ) {
@@ -101,7 +105,7 @@ function matchFromAnswer( date_string ) {
         
     }
     
-    return (json_text) ? convertToValidJSON(json_text) : false;
+    return ( typeof json_text === 'string' && json_text.trim().length > 0) ? convertToValidJSON(json_text) : false;
 }
 
 function convertToValidJSON(str) {
@@ -167,7 +171,9 @@ export async function getAnswers( date_string, number_to_get ) {
         let _date = getFormattedDate( puzzleDate );
         let puzzle = await getAnswerFromDate( _date );
         
-        a.push( puzzle.categories.join(' |~~| ') + ' |~~~~| ' + puzzle.extra.join(' |~~| ' ) );
+        if ( Object.keys(puzzle).length !== 0 ) {
+            a.push( puzzle.categories.join(' |~~| ') + ' |~~~~| ' + puzzle.extra.join(' |~~| ' ) );
+        }
         i++;
     }
     

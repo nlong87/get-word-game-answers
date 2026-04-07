@@ -15,8 +15,8 @@ let dayNum = today.diff(startDay, "days") + dayOffset;
 */
 
 const start_puzzle_date = "August 7 2023";
-const start_puzzle_number = 500; //
-const start_offset = 0; //
+const start_puzzle_number = 500;
+const start_offset = 0;
 const scheduled_time = {
     'hours': 18,
     'minutes': 0
@@ -82,4 +82,3 @@ export async function getAnswers( date_string, number_to_get ) {
     };
     
 }
-// await getAnswers('2026-01-18 02:00:00 GMT-0700', 15).then( result => console.log(result) );

@@ -1,17 +1,17 @@
 import {manual_post_answers, process_answers} from "./index.js";
 
-const s_date = "2026-04-06";
+const s_date = "2026-03-27";
 
 // manual_post_answers( 'pimantle', 5, s_date).then(r => console.log(r));
 // manual_post_answers( 'letroso', 8, s_date).then(r => console.log(r));
 // manual_post_answers( 'connections', 1, s_date).then(r => console.log(r));
-// manual_post_answers( 'harmonies', 1, s_date);
+// manual_post_answers( 'harmonies', 3, s_date);
 // manual_post_answers( 'poeltl', 1, s_date);
 // manual_post_answers( 'keyword', 2, s_date);
 // manual_post_answers( 'marveldle', 1);
 // manual_post_answers( 'revealed', 2, s_date);
 // manual_post_answers( 'parseword', 1, s_date);
-// manual_post_answers( 'on_the_record', 2, s_date);
+// manual_post_answers( 'on_the_record', 1, s_date);
 // manual_post_answers( 'searchle', 10, s_date).then(r => console.log(r));
 // manual_post_answers( 'shuffalo', 1, s_date).then(r => console.log(r));
 // manual_post_answers( 'squareword', 4, s_date).then(r => console.log(r));

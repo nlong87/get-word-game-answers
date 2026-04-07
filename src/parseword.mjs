@@ -9,7 +9,7 @@ import {
 const start_date = '2026-01-29';
 const start_puzzle_number = 1;
 const scheduled_time = {
-    'hours': 18,
+    'hours': 20,
     'minutes': 0
 };
 const reset_timezone = 'America/Los_Angeles';

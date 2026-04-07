@@ -30,9 +30,11 @@ async function getAnswer( targetDate ) {
     
     const response = await fetch(keyword_url);
     const data = await response.json();
+    let answers = [];
     
-    if ( data ) {
-        return data.questions[0].answers[0];
+    if ( data && data.hasOwnProperty('questions') ) {
+        answers = data.questions.map( (item) => { return item.answers[0]; })
+        return answers.join(' |~~| ');
     } else {
         return '';
     }
