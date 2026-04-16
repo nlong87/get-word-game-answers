@@ -1,19 +1,19 @@
 import fetch from "node-fetch";
 import {
-    dayDiff,
-    getUTCDateDisplay,
-    midnightInZone,
-    modifyDays,
-    setTimeInZone, utcYMD
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
 } from "./helpers.mjs";
 
-const reset_timezone = 'Etc/UTC';
-const start_date = midnightInZone('2025-05-19', reset_timezone);
-const start_puzzle_number = 1;
-const scheduled_time = {
-    'hours': 16,
-    'minutes': 5
-};
+const Config = {
+    number: 1,
+    date: getSpecificDay('2025-05-19'),
+    schedule: {
+        h: 16,
+        m: 5
+    },
+    tz: 'Etc/UTC'
+}
 const initial_guess = 'ironman'; // We use ironman because he exists in both games
 const default_headers = {
     "Accept": "*/*",
@@ -263,35 +263,28 @@ async function deduceAnswer( date, type = 'comics' ) {
 
 export async function getAnswer() {
     
-    let answers = [];
+    const date = getCurrentDayInTimezone(Config.tz);
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date.subtract({ days: 1 }), Config.schedule.h, Config.schedule.m);
+    const diff = date.since(Config.date).days;
+    const currentPuzzleNumber = Config.number + diff;
     
-    let published = midnightInZone(null, reset_timezone);
-    const scheduled = setTimeInZone(
-        modifyDays( midnightInZone(null, reset_timezone), 1, false),
-        scheduled_time.hours,
-        scheduled_time.minutes,
-        reset_timezone
-    );
-    
-    const diff = dayDiff( published, start_date );
-    const currentPuzzleNumber = start_puzzle_number + diff;
-    
-    const target_date = utcYMD( published );
-    const comics_answer = await deduceAnswer( target_date, 'comics');
-    const audiovisual_answer = await deduceAnswer( target_date, 'audiovisual' );
+    const comics_answer = await deduceAnswer( published, 'comics');
+    const audiovisual_answer = await deduceAnswer( published, 'audiovisual' );
     
     if ( !comics_answer && !audiovisual_answer )
         return false;
     
+    let answers = [];
     answers.push( comics_answer.name + ' |~~~~| ' + audiovisual_answer.name );
     
     return {
         'type': 'Marveldle',
-        'publishedDate': getUTCDateDisplay( published ),
-        'scheduledDate': getUTCDateDisplay( scheduled, true ),
+        'publishedDate': published,
+        'scheduledDate': scheduled,
         'startingNumber': currentPuzzleNumber,
         'answers': answers
     };
     
 }
-//await getAnswer().then(r => console.log(r));
+// await getAnswer().then(r => console.log(r));

@@ -1,36 +1,42 @@
 import fetch from 'node-fetch';
 import {
-    getDayDifference, getUTCDateDisplay,
-    midnightInZone,
-    modifyDays,
-    utcYMD
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
 } from "./helpers.mjs";
 
-const start_date = '2026-01-29';
-const start_puzzle_number = 1;
-const scheduled_time = {
-    'hours': 20,
-    'minutes': 0
-};
-const reset_timezone = 'America/Los_Angeles';
+const Config = {
+    number: 1,
+    date: getSpecificDay('2026-01-29'),
+    schedule: {
+        h: 20,
+        m: 0
+    },
+    tz: 'America/New_York'
+}
 
-async function getAnswerJson( date ) {
-    let date_string = utcYMD( date );
-    const response = await fetch(`https://www.parseword.com/puzzles/${date_string}.json`, {
+async function getAnswerJson( date_string ) {
+    const fetch_url = `https://www.parseword.com/puzzles/${date_string}.json`;
+    const response = await fetch(fetch_url, {
         method: 'GET',
         headers: {
             'Accept': 'application/json, text/javascript, */*'
         },
     });
-    
-    return await response.json();
+    const text = await response.text();
+    if ( !text ) return null;
+    try {
+        return JSON.parse(text);
+    } catch {
+        return null;
+    }
 }
 
-async function getAnswer(date) {
+async function getAnswer(date_string) {
     
-    const json_data = await getAnswerJson(date);
+    const json_data = await getAnswerJson(date_string);
     let mutation_answers = [];
-    let answer;
+    let answer = null;
     
     if (json_data) {
         let mutations = json_data['mutations'];
@@ -54,30 +60,33 @@ async function getAnswer(date) {
 
 export async function getAnswers( date_string, number_to_get) {
     
-    let published = midnightInZone(date_string, reset_timezone);
-    let scheduled = modifyDays( published, 1, false);
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    scheduled.setHours( scheduled_time.hours );
-    scheduled.setMinutes( scheduled_time.minutes );
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date.subtract({ days: 1 }), Config.schedule.h, Config.schedule.m);
     
-    let day_diff = getDayDifference( start_date, date_string );
-    
-    let puzzleNumber = start_puzzle_number + day_diff;
+    let puzzleNumber = Config.number + date.since(Config.date).days;
     let answers = [];
-    let answerDate = published;
     
     for( let i = 0; i < number_to_get; i++ ) {
-        let answer = await getAnswer( answerDate );
-        answers.push( answer );
-        answerDate = modifyDays( answerDate, 1 );
+        let answer = await getAnswer( date.add({days: i}).toString() );
+        if ( answer.answer !== null ) {
+            answers.push( answer );
+            
+        }
     }
     
     answers = answers.map(a => a.answer +  ' |~~~~| ' + JSON.stringify(a.extra));
     
     return {
         'type': 'Parseword',
-        'publishedDate': getUTCDateDisplay( published ),
-        'scheduledDate': getUTCDateDisplay( scheduled, true ),
+        'publishedDate': published,
+        'scheduledDate': scheduled,
         'startingNumber': puzzleNumber,
         'answers': answers
     };
