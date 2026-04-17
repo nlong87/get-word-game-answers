@@ -1,13 +1,20 @@
-import {getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
 import fetch from "node-fetch";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
+} from "./helpers.mjs";
 
-const gameStartDays = 19134;
-let start_date = new Date('June 12, 2023');
-let start_number = 386;
-let scheduled_time = {
-    'hours': 14,
-    'minutes': 0
+const Config = {
+    number: 386,
+    date: getSpecificDay('2023-06-12'),
+    schedule: {
+        h: 14,
+        m: 0
+    },
+    tz: 'Asia/Dubai'
 }
+const gameStartDays = 19134;
 
 function getPuzzleNumber( day ) {
     return day - gameStartDays;
@@ -31,31 +38,38 @@ async function getSecretWord(day) {
 
 export async function getAnswers( date_string, number_to_get) {
     
-    let target_date = new Date(date_string);
-    let now = target_date.getTime();
+    let date;
+    if (date_string === null) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
+    
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date.subtract({days: 1}), Config.schedule.h, Config.schedule.m);
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
+    
+    const epochMs = date.toZonedDateTime({ timeZone: "UTC" })
+        .toInstant()
+        .epochMilliseconds;
     
     // 86400000 = Day in Milliseconds
-    let today = Math.floor(now / 86400000);
+    const daysSinceEpoch = Math.floor(epochMs / 86400000);
     
-    let day_diff = getDayDifference( start_date, date_string );
     let answers = [];
-    
-    let published = new Date(date_string);
-    let scheduled = subDays( published, 1 );
-    scheduled.setHours( scheduled_time.hours );
-    scheduled.setMinutes( scheduled_time.minutes );
     let answer;
     
     for( let i = 0; i < number_to_get; i++ ) {
-        await getSecretWord( today + i ).then(r => answer = r.toUpperCase() );
+        await getSecretWord( daysSinceEpoch + i ).then(r => answer = r.toUpperCase() );
         answers.push( answer );
     }
     
     return {
         'type': 'Semantle Junior',
-        'publishedDate': getDateDisplay( published ),
-        'scheduledDate': getDateDisplay( scheduled, true ),
-        'startingNumber': start_number + day_diff,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
 }

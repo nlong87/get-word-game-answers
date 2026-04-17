@@ -1,21 +1,22 @@
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import {
-    dayDiff,
-    getUTCDateDisplay,
-    midnightInZone,
-    modifyDays,
-    utcYMD
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
 } from "./helpers.mjs";
 
+const Config = {
+    number: 310,
+    date: getSpecificDay('2026-02-22'),
+    schedule: {
+        h: 21,
+        m: 0
+    },
+    tz: 'America/New_York'
+}
+
 const revealed_url = "https://www.britannica.com/games/revealed";
-const reset_timezone = 'America/New_York';
-const start_puzzle_date = midnightInZone('2026-02-22', reset_timezone);
-const start_puzzle_number = 310;
-const scheduled_time = {
-    'hours': 21,
-    'minutes': 0
-};
 let cachedGameData = [];
 
 function extractGameData(html) {
@@ -151,33 +152,35 @@ async function getGameData() {
 
 async function getPuzzle( targetDate ) {
     
-    let date_string = utcYMD(targetDate);
+    let date_string = targetDate.toString();
     let gameData = await getGameData();
     
     return (gameData) ? gameData.find( x => x['published_date'] === date_string) : null;
 }
 
-export async function getAnswers( date_string, number_to_get ) {
+export async function getAnswers(date_string, number_to_get) {
+    
+    let date;
+    if (date_string === null) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
+    
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date.subtract({days: 1}), Config.schedule.h, Config.schedule.m);
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
     
     let answers = [];
     
-    const published = midnightInZone( date_string, reset_timezone );
-    let scheduled = modifyDays( published, 1, false);
-    scheduled.setHours( scheduled_time.hours );
-    scheduled.setMinutes( scheduled_time.minutes );
-    
-    
-    const diff = dayDiff( published, start_puzzle_date );
-    const start = start_puzzle_number + diff;
-    
     let i = 0;
-    while( i < number_to_get ) {
+    while (i < number_to_get) {
         
-        let puzzleDate = modifyDays( midnightInZone( date_string, reset_timezone ), i );
-        let puzzle = await getPuzzle( puzzleDate );
+        let puzzle = await getPuzzle(date.add({days: i}));
         
-        if ( puzzle ) {
-            answers.push( puzzle.title );
+        if (puzzle) {
+            answers.push(puzzle.title);
         }
         
         i++;
@@ -185,9 +188,9 @@ export async function getAnswers( date_string, number_to_get ) {
     
     return {
         'type': 'Revealed',
-        'publishedDate': getUTCDateDisplay( published ),
-        'scheduledDate': getUTCDateDisplay( scheduled, true ),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
     

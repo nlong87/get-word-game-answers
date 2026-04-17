@@ -1,12 +1,19 @@
 import fetch from "node-fetch";
-import {getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
+} from "./helpers.mjs";
 
-const start_puzzle_date = "June 22 2023";
-const start_puzzle_number = 1;
-const scheduled_time = {
-    'hours': 18,
-    'minutes': 0
-};
+const Config = {
+    number: 1,
+    date: getSpecificDay('2023-06-22'),
+    schedule: {
+        h: 18,
+        m: 0
+    },
+    tz: 'Etc/UTC'
+}
 
 async function getAllAnswers() {
     
@@ -32,19 +39,21 @@ async function getScriptContents() {
 
 export async function getAnswers(date_string, number_to_get) {
     
-    const published = new Date(date_string);
-    const scheduled = subDays( published, 1 );
-    scheduled.setHours(scheduled_time.hours);
-    scheduled.setMinutes(scheduled_time.minutes);
+    let date;
+    if (date_string === null) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    const diff = getDayDifference(start_puzzle_date, published.toDateString());
-    const index_diff = getDayDifference(start_puzzle_date, date_string);
-    
-    const start = start_puzzle_number + diff;
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date.subtract({days: 1}), Config.schedule.h, Config.schedule.m);
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
     
     const all_answers = await getAllAnswers();
     
-    let answers = all_answers.slice(index_diff, index_diff + number_to_get );
+    let answers = all_answers.slice(diff, diff + number_to_get );
     
     if (!answers) {
         return false;
@@ -54,11 +63,10 @@ export async function getAnswers(date_string, number_to_get) {
     
     return {
         'type': 'Searchle',
-        'publishedDate': getDateDisplay(published),
-        'scheduledDate': getDateDisplay(scheduled, true),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
     
 }
-// await getAnswers('January 25 2026', 7).then(r => console.dir(r) );

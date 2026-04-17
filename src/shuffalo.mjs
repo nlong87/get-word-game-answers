@@ -1,43 +1,44 @@
 import fetch from "node-fetch";
 import {JSDOM } from "jsdom";
 import JSON5 from "json5";
-import {addDays, getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay,
+} from "./helpers.mjs";
 
-const start_date = 'October 20 2025';
-const start_puzzle_number = 1;
-const scheduled_time = {
-    'hours': 3,
-    'minutes': 15
-};
+const Config = {
+    number: 1,
+    date: getSpecificDay('2025-10-20'),
+    schedule: {
+        h: 3,
+        m: 15
+    },
+    tz: 'America/Los_Angeles'
+}
 const answer_base_url = 'https://www.newyorker.com/puzzles-and-games-dept/shuffalo/';
+
+function ymdSlash(date) {
+    const y = date.year;
+    const m = String(date.month).padStart(2, '0');
+    const d = String(date.day).padStart(2, '0');
+    return `${y}/${m}/${d}`;
+}
 
 /**
  * Retrieves the answer based on the provided date string.
  *
- * @param {string} date_string - The date string used to fetch the answer.
  * @returns {Promise} The promise representing the response in JSON format.
  * @throws {Error} if there is an issue with the fetch request or response.
+ * @param date
  */
-async function getAnswer( date_string ) {
+async function getAnswer( date ) {
     
-    const dateObject = new Date(date_string);
-    let year = dateObject.getFullYear();
-    let month = dateObject.getMonth()+1;
-    let dt = dateObject.getDate();
-    
-    if (dt < 10) {
-        dt = '0' + dt;
-    }
-    if (month < 10) {
-        month = '0' + month;
-    }
-    const response = await fetch(answer_base_url + year + '/' + month + '/' + dt );
-    
-    let html = await response.text();
-    
+    const ymd = ymdSlash(date);
+    const response = await fetch(answer_base_url + ymd );
+    const html = await response.text();
     const puzzlesAndGames = await extractPuzzlesAndGames( html );
-    let answers = [];
-    
+    const answers = [];
 
     if ( puzzlesAndGames !== null ) {
         
@@ -88,33 +89,32 @@ async function extractPuzzlesAndGames(html) {
 
 export async function getAnswers( date_string, number_to_get ) {
     
-    let day_diff = getDayDifference( start_date, date_string );
-    let start = start_puzzle_number+day_diff;
-    let published = new Date( date_string );
-    let scheduled = published;
-    scheduled.setHours( scheduled_time.hours );
-    scheduled.setMinutes( scheduled_time.minutes );
+    let date;
+    if (date_string === null) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    let puzzleDate = new Date(date_string);
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date, Config.schedule.h, Config.schedule.m);
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
+    
     let answers = [];
     let i = 0;
-    let answer;
     while( i < number_to_get ) {
-        
-        puzzleDate = addDays( date_string, i );
-        answer = await getAnswer( `${puzzleDate.toLocaleDateString("en-US",{timeZone: 'Europe/Prague'})}` );
-        
+        const answer = await getAnswer( date.add({ days: i } ) );
         answers.push( answer.join(' |~~| ') );
         i++;
     }
     
     return {
         'type': 'Shuffalo',
-        'publishedDate': getDateDisplay( published ),
-        'scheduledDate': getDateDisplay( scheduled, true ),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
     
 }
-// await getAnswers('12/20/2025', 3).then( r => console.log(r));

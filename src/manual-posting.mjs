@@ -1,6 +1,7 @@
 import {manual_post_answers, process_answers} from "./index.js";
 
-const s_date = "2026-03-27";
+const s_date = "2026-04-14";
+// const s_date = null;
 
 // manual_post_answers( 'pimantle', 5, s_date).then(r => console.log(r));
 // manual_post_answers( 'letroso', 8, s_date).then(r => console.log(r));
@@ -11,19 +12,21 @@ const s_date = "2026-03-27";
 // manual_post_answers( 'marveldle', 1);
 // manual_post_answers( 'revealed', 2, s_date);
 // manual_post_answers( 'parseword', 1, s_date);
-// manual_post_answers( 'on_the_record', 1, s_date);
+// manual_post_answers( 'on_the_record', 2, s_date);
 // manual_post_answers( 'searchle', 10, s_date).then(r => console.log(r));
 // manual_post_answers( 'shuffalo', 1, s_date).then(r => console.log(r));
 // manual_post_answers( 'squareword', 4, s_date).then(r => console.log(r));
 // manual_post_answers( 'weaver', 8, s_date).then(r => console.log(r));
 // manual_post_answers( 'weaver-x', 7, s_date).then(r => console.log(r));
-// manual_post_answers( 'colordle', 1, s_date).then(r => console.log(r));
+// manual_post_answers( 'colordle', 7, s_date).then(r => console.log(r));
 
+// process_answers( 'colordle', 1, s_date).then(r => console.log(r));
 // process_answers( 'letroso', 1, s_date).then(r => console.log(r));
 // process_answers( 'connections', 5, s_date).then(r => console.log(r));
 // process_answers( 'wordle', 8, s_date).then(r => console.log(r));
 // process_answers( 'revealed', 3, s_date).then(r => console.log(r));
 // process_answers( 'keyword', 8, s_date).then(r => console.log(r));
+// process_answers( 'on_the_record', 1, s_date).then(r => console.log(r));
 // process_answers( 'marveldle', 1, s_date).then(r => console.log(r));
 // process_answers( 'poeltl', 1, s_date).then(r => console.log(r));
 // process_answers( 'jumble', 5, s_date).then(r => console.log(r));

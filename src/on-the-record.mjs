@@ -1,27 +1,26 @@
 import fetch from "node-fetch";
 import {
-    dayDiff,
-    getUTCDateDisplay,
-    midnightInZone,
-    modifyDays,
-    setTimeInZone, utcYMD
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
 } from "./helpers.mjs";
 
-const reset_timezone = 'America/New_York';
-const start_puzzle_date = midnightInZone('2026-03-23', reset_timezone);
-const start_puzzle_number = 1;
-const scheduled_time = {
-    'hours': 21,
-    'minutes': 0
-};
-
-function ymdSlash(date) {
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(date.getUTCDate()).padStart(2, "0");
-    return `${y}/${m}/${d}`;
+const Config = {
+    number: 1,
+    date: getSpecificDay('2026-03-23'),
+    schedule: {
+        h: 21,
+        m: 0
+    },
+    tz: 'America/New_York'
 }
 
+function ymdSlash(date) {
+    const y = date.year;
+    const m = String(date.month).padStart(2, '0');
+    const d = String(date.day).padStart(2, '0');
+    return `${y}/${m}/${d}`;
+}
 
 async function getAnswer( targetDate ) {
     
@@ -29,37 +28,44 @@ async function getAnswer( targetDate ) {
     const keyword_url = `https://games-service-prod.site.aws.wapo.pub/on-the-record/levels/questions/${date_string}`;
     
     const response = await fetch(keyword_url);
-    const data = await response.json();
-    let answers = [];
-    
-    if ( data && data.hasOwnProperty('questions') ) {
-        answers = data.questions.map( (item) => { return item.answers[0]; })
-        return answers.join(' |~~| ');
-    } else {
+    const text = await response.text();
+    if ( !text ) return null;
+    try {
+        const data = JSON.parse(text);
+        let answers = [];
+        
+        if ( data && data.hasOwnProperty('questions') ) {
+            answers = data.questions.map( (item) => { return item.answers[0]; })
+            return answers.join(' |~~| ');
+        } else {
+            return '';
+        }
+    } catch {
         return '';
     }
+    
 }
 
 export async function getAnswers( date_string, number_to_get ) {
     
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
+    
+    const published = date.toString();
+    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
+    
     let answers = [];
-    
-    const published = midnightInZone( date_string, reset_timezone );
-    const scheduled = setTimeInZone(
-        modifyDays( published, 1, false ),
-        scheduled_time.hours,
-        scheduled_time.minutes,
-        reset_timezone
-    );
-    
-    const diff = dayDiff( published, start_puzzle_date );
-    const start = start_puzzle_number + diff;
     
     let i = 0;
     while( i < number_to_get ) {
         
-        let puzzleDate = modifyDays( published, i );
-        let answer = await getAnswer( puzzleDate );
+        let answer = await getAnswer( date.add({ days: i }) );
         
         if ( answer ) {
             answers.push( answer );
@@ -70,10 +76,9 @@ export async function getAnswers( date_string, number_to_get ) {
     
     return {
         'type': 'On the Record',
-        'publishedDate': getUTCDateDisplay( published ),
-        'scheduledDate': getUTCDateDisplay( scheduled, true ),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
 }
-// getAnswers( '2026-03-23', 5).then(r => console.log(r));

@@ -1,12 +1,19 @@
 import fetch from "node-fetch";
-import {addDays, getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
+} from "./helpers.mjs";
 
-const starting_puzzle_date = "May 30 2023";
-const starting_puzzle_number = 496;
-const scheduled_time = {
-    'hours': 11,
-    'minutes': 0
-};
+const Config = {
+    number: 496,
+    date: getSpecificDay('2023-05-30'),
+    schedule: {
+        h: 11,
+        m: 0
+    },
+    tz: 'Indian/Maldives'
+}
 
 let ve = 16622496e5
     , je = 16426368e5
@@ -283,9 +290,9 @@ var hasher = function() {
         e
 }();
 
-async function getAnswer( targetDate, type = 'default') {
+async function getAnswer( targetDateTimestamp, type = 'default') {
     const timezone_offset = 8 * 60 * 60 * 1000;
-    let timestamp = targetDate.getTime() + timezone_offset;
+    let timestamp = targetDateTimestamp + timezone_offset;
     let fileObject = ye( type, timestamp  );
 
     if ( fileObject ) {
@@ -334,20 +341,29 @@ function capitalizeFirstLetter(string) {
 
 export async function getAnswers( date_string, number_to_get, type = 'default' ) {
     
-    let startingDate = new Date(date_string);
-    let start = starting_puzzle_number + getDayDifference( starting_puzzle_date, date_string );
-    let answers = [];
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    let published = new Date(date_string);
-    let scheduled = subDays( published, 1 )
-        scheduled.setHours( scheduled_time.hours );
-        scheduled.setMinutes( scheduled_time.minutes );
+    const published = date.toString();
+    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
+    
+    let answers = [];
     
     for( let i = 0; i < number_to_get; i++ ) {
         
-        let targetDate = addDays(startingDate, i );
+        const ts = date
+            .add({days: i})
+            .toZonedDateTime({ timeZone: "UTC" }) // anchor at midnight UTC
+            .toInstant()
+            .epochMilliseconds;
         
-        let answer = await getAnswer( targetDate, type );
+        let answer = await getAnswer( ts, type );
         answers.push( answer );
     }
     
@@ -358,9 +374,9 @@ export async function getAnswers( date_string, number_to_get, type = 'default' )
     
     return {
         'type': display_type,
-        'publishedDate': getDateDisplay( published ),
-        'scheduledDate': getDateDisplay( scheduled, true ),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
 }

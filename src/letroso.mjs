@@ -1,29 +1,18 @@
 import {
-    getDayDifference,
-    getUTCDateDisplay,
-    midnightInZone,
-    modifyDays, setTimeInZone
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
 } from "./helpers.mjs";
 import {launchBrowser} from "./browser.mjs";
 
-const reset_timezone = 'Etc/UTC';
-const start_puzzle_date = midnightInZone('2025-07-14', reset_timezone);
-const start_puzzle_number = 317;
-const scheduled_time = {
-    'hours': 18,
-    'minutes': 0
-};
-
-function getFormattedDate( date ) {
-    let year = date.getUTCFullYear();
-    
-    let month = (1 + date.getUTCMonth()).toString();
-    month = month.length > 1 ? month : '0' + month;
-    
-    let day = date.getUTCDate().toString();
-    day = day.length > 1 ? day : '0' + day;
-    
-    return year + '-' + month + '-' + day;
+const Config = {
+    number: 316,
+    date: getSpecificDay('2025-07-14'),
+    schedule: {
+        h: 18,
+        m: 0
+    },
+    tz: 'Etc/UTC'
 }
 
 async function getAnswerFromSite(date_string) {
@@ -154,20 +143,23 @@ function parseBrowserChannel(raw) {
 
 export async function getAnswers( date_string, number_to_get ) {
     
-    const published = midnightInZone(date_string, reset_timezone);
-    const scheduled = setTimeInZone( modifyDays( published, 1, false), scheduled_time.hours, scheduled_time.minutes, reset_timezone );
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    const diff = getDayDifference( start_puzzle_date, published.toDateString() );
-    const start = start_puzzle_number + diff;
+    const published = date.toString();
+    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
     
     let answers = [];
     let i = 0;
     while( i < number_to_get ) {
         
-        let puzzleDate = modifyDays( published, i );
-        let _date = getFormattedDate( puzzleDate );
-        let answer = await getAnswerFromSite( _date );
-        
+        let answer = await getAnswerFromSite( date.add( { days: i }).toString() );
         answers.push( answer );
         i++;
     }
@@ -178,9 +170,9 @@ export async function getAnswers( date_string, number_to_get ) {
     
     return {
         'type': 'Letroso',
-        'publishedDate': getUTCDateDisplay( published ),
-        'scheduledDate': getUTCDateDisplay( scheduled, true ),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
     

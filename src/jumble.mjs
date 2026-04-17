@@ -1,22 +1,32 @@
 import fetch from 'node-fetch';
-import {addDays, getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
+} from "./helpers.mjs";
 
-const starting_date = "May 24 2023";
-const starting_puzzle_number = 450;
-const scheduled_time = {
-    'hours': 0,
-    'minutes': 30
-};
+const Config = {
+    number: 450,
+    date: getSpecificDay('2023-05-24'),
+    schedule: {
+        h: 0,
+        m: 30
+    },
+    tz: 'America/Los_Angeles'
+}
+
+function getFormattedDate( date ) {
+    const y = date.year;
+    const m = String(date.month).padStart(2, '0');
+    const d = String(date.day).padStart(2, '0');
+    return `${m}/${d}/${y}`;
+}
 
 async function getAnswer( targetDate ) {
     
-    let date_string = ('0' + (targetDate.getMonth()+1)).slice(-2) + '/'
-    + ('0' + targetDate.getDate()).slice(-2) + '/'
-    + targetDate.getFullYear();
-    
-    let day = targetDate.getDay();
-    
-    let product_ID = ( day === 0 ) ? 'jumblesun' : 'jumbledaily';
+    let date_string = getFormattedDate(targetDate);
+    let day = targetDate.dayOfWeek;
+    let product_ID = ( day === 7 ) ? 'jumblesun' : 'jumbledaily';
     
     const params = new URLSearchParams();
     params.append('apiKey', '28731af1e0f08418dbdbe583dbf2470ff87a1664bc461b83413742053d793d8f');
@@ -63,27 +73,31 @@ async function getAnswer( targetDate ) {
 
 export async function getAnswers( date_string, number_to_get ) {
     
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
+    
+    const published = date.toString();
+    const scheduled = convertDateForSQL( date, Config.schedule.h, Config.schedule.m );
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
+    
     let answers = [];
-    let start_date = new Date( date_string );
-    let date = start_date;
-    let published = new Date(date_string);
-    let scheduled = new Date(date_string);
-        scheduled.setHours( scheduled_time.hours );
-        scheduled.setMinutes( scheduled_time.minutes );
     
     for( let i = 0; i < number_to_get; i++ ) {
         
-        date = addDays( start_date, i );
-        
-        let answer = await getAnswer( date );
+        let answer = await getAnswer( date.add({days: i}) );
         answers.push( answer );
     }
     
     return {
         'type': 'Jumble',
-        'publishedDate': getDateDisplay( published ),
-        'scheduledDate': getDateDisplay( scheduled, true ),
-        'startingNumber': starting_puzzle_number + getDayDifference( starting_date, date_string ),
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
     

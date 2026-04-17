@@ -1,18 +1,20 @@
 import fetch from "node-fetch";
 import {
-    dayDiff,
-    midnightInZone,
-    setTimeInZone,
-    getUTCDateDisplay, modifyDays
+    getSpecificDay,
+    getCurrentDayInTimezone,
+    convertDateForSQL
 } from "./helpers.mjs";
 
-const reset_timezone = "America/Puerto_Rico";
-const start_puzzle_date = midnightInZone('2024-02-16', reset_timezone);
-const start_puzzle_number = 723;
-const scheduled_time = {
-    'hours': 20,
-    'minutes': 15
-};
+const Config = {
+    number: 723,
+    date: getSpecificDay('2024-02-16'),
+    schedule: {
+        h: 20,
+        m: 15
+    },
+    tz: 'America/Puerto_Rico'
+}
+
 const guessIds = [481,217,283,189,294,18,110,207];
 const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
 const sec_ua = "`\"Chromium`\";v=`\"134`\", `\"Not:A-Brand`\";v=`\"24`\", `\"Google Chrome`\";v=`\"134`\"";
@@ -95,35 +97,28 @@ async function getAnswerFromSite( date = '') {
     return answer;
 }
 
-function toYMD(date) {
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(date.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-}
-
 export async function getAnswer(date_string = '') {
     
-    // Get current date at midnight of the timezone the puzzle resets and compare it to the provided date_string
-    const todayDate = midnightInZone(null, reset_timezone);
-    const puzzleDate = midnightInZone(date_string, reset_timezone);
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    const isCurrent = (todayDate.getTime() === puzzleDate.getTime());
+    const latestDate = getCurrentDayInTimezone(Config.tz);
     
-    const published = puzzleDate;
-    const scheduled = setTimeInZone(
-        modifyDays(puzzleDate, 1, false),
-        scheduled_time.hours,
-        scheduled_time.minutes,
-        reset_timezone
-    );
-    const diff = dayDiff(puzzleDate, start_puzzle_date);
-    const start = start_puzzle_number + diff;
+    const published = date.toString();
+    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
+    
+    const isCurrent = (latestDate.toString() === date.toString() );
     
     let answers = [];
     let answer = null;
     
-    let date_param = (isCurrent) ? '' : toYMD(puzzleDate);
+    let date_param = (isCurrent) ? '' : date.toString();
     await getAnswerFromSite(date_param).then(r => answer = r);
     if (!answer) return false;
     
@@ -131,10 +126,9 @@ export async function getAnswer(date_string = '') {
     
     return {
         'type': 'Poeltl',
-        'publishedDate': getUTCDateDisplay(published),
-        'scheduledDate': getUTCDateDisplay(scheduled, true),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
 }
-//getAnswer('').then( r => console.log(r) );

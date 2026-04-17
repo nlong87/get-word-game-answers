@@ -33,7 +33,7 @@ export async function manual_post_answers(puzzle_type, amount_to_return = 8, sta
 
 export async function process_answers(type, amount_to_return, start_date = null) {
     
-    if ( start_date === null && type !== 'poeltl' && type !== 'marveldle' && type !== 'harmonies' ) {
+    if ( start_date === null && type !== 'parseword' && type !== 'poeltl' && type !== 'marveldle' && type !== 'harmonies' ) {
         start_date = utcYMD( midnightInZone() );
     }
     

@@ -1,15 +1,22 @@
 import fetch from "node-fetch";
-import {dayDiff, getUTCDateDisplay, midnightInZone, modifyDays, setTimeInZone} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
+} from "./helpers.mjs";
+
+const Config = {
+    number: 1,
+    date: getSpecificDay('2024-03-29'),
+    schedule: {
+        h: 20,
+        m: 0
+    },
+    tz: 'America/Puerto_Rico'
+}
 
 const base_script = "https://harmonies.io/";
 const base_script_dir = 'https://harmonies.io/_app/immutable/';
-const reset_timezone = 'America/New_York';
-const start_puzzle_date = midnightInZone('2024-03-29', reset_timezone);
-const start_puzzle_number = 1;
-const scheduled_time = {
-    'hours': 20,
-    'minutes': 0
-};
 let scripts = [];
 let scripts_cache = [];
 
@@ -144,30 +151,32 @@ function convertToValidJSON(str) {
 }
 
 function getFormattedDate( date ) {
-    const y = date.getUTCFullYear();
-    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(date.getUTCDate()).padStart(2, "0");
+    const y = date.year;
+    const m = String(date.month).padStart(2, '0');
+    const d = String(date.day).padStart(2, '0');
     return `${m}/${d}/${y}`;
 }
 
 export async function getAnswers( date_string, number_to_get ) {
     
-    const published = midnightInZone( date_string, reset_timezone );
-    const scheduled = setTimeInZone(
-        modifyDays( published, 1, false ),
-        scheduled_time.hours,
-        scheduled_time.minutes,
-        reset_timezone
-    );
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    const diff = dayDiff( published, start_puzzle_date );
-    const start = start_puzzle_number + diff;
+    const published = date.toString();
+    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+    
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
     
     let a = [];
     let i = 0;
     while( i < number_to_get ) {
         
-        let puzzleDate = modifyDays( midnightInZone( date_string, reset_timezone ), i );
+        let puzzleDate = date.add({days: i});
         let _date = getFormattedDate( puzzleDate );
         let puzzle = await getAnswerFromDate( _date );
         
@@ -179,9 +188,9 @@ export async function getAnswers( date_string, number_to_get ) {
     
     return {
         'type': 'Harmonies',
-        'publishedDate': getUTCDateDisplay( published ),
-        'scheduledDate': getUTCDateDisplay( scheduled, true ),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': a
     };
     

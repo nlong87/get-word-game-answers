@@ -1,13 +1,20 @@
 import fetch from "node-fetch";
-import {getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay,
+} from "./helpers.mjs";
 
+const Config = {
+    number: 1,
+    date: getSpecificDay('2022-02-01'),
+    schedule: {
+        h: 18,
+        m: 0
+    },
+    tz: 'Etc/UTC'
+}
 const base_script = "https://squareword.org/";
-const start_puzzle_date = "February 1 2022";
-const start_puzzle_number = 1;
-const scheduled_time = {
-    'hours': 18,
-    'minutes': 0
-};
 
 async function getScriptUrl(url, file_name) {
     
@@ -40,16 +47,16 @@ async function getAllAnswers() {
     return [...html.matchAll(/(\w{25})/g)].map(m => m[1]);
 }
 
-async function getAnswersFromSite(date_string, answers_to_get = 1) {
+async function getAnswersFromSite( date, answers_to_get = 1) {
     
     const answers = await getAllAnswers();
     if (!answers) {
         return false;
     }
     
-    const marker_date = '2026/01/27';
+    const marker_date = getSpecificDay('2026-01-27');
     const marker_index = answers.lastIndexOf('swatsthreeeasedalongdense');
-    const date_diff = getDayDifference(marker_date, date_string);
+    const date_diff = date.since(marker_date).days;
     
     let answer_selection = answers.slice((marker_index + date_diff), (marker_index + date_diff) + answers_to_get);
     let mapped = answer_selection.map(str => str.toUpperCase().match(/.{1,5}/g));
@@ -59,15 +66,19 @@ async function getAnswersFromSite(date_string, answers_to_get = 1) {
 
 export async function getAnswers(date_string, number_to_get) {
     
-    const published = new Date(date_string);
-    const scheduled = subDays( published, 1 );
-    scheduled.setHours(scheduled_time.hours);
-    scheduled.setMinutes(scheduled_time.minutes);
+    let date;
+    if (date_string === null) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    const diff = getDayDifference(start_puzzle_date, published.toDateString());
-    const start = start_puzzle_number + diff;
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date.subtract({days: 1}), Config.schedule.h, Config.schedule.m);
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
     
-    let answers = await getAnswersFromSite(date_string, number_to_get);
+    let answers = await getAnswersFromSite(date, number_to_get);
     
     if (!answers) {
         return false;
@@ -75,11 +86,10 @@ export async function getAnswers(date_string, number_to_get) {
     
     return {
         'type': 'Squareword',
-        'publishedDate': getDateDisplay(published),
-        'scheduledDate': getDateDisplay(scheduled, true),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
     
 }
-//await getAnswers('January 16 2026', 7).then(r => console.dir(r) )

@@ -1,13 +1,20 @@
 import fetch from "node-fetch";
-import {getDateDisplay, getDayDifference} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
+} from "./helpers.mjs";
 
+const Config = {
+    number: 1,
+    date: getSpecificDay('2023-09-25'),
+    schedule: {
+        h: 0,
+        m: 0
+    },
+    tz: 'America/Los_Angeles'
+}
 const base_script = "https://wordwormdormdork.com";
-const start_puzzle_date = "September 25 2023";
-const start_puzzle_number = 1;
-const scheduled_time = {
-    'hours': 0,
-    'minutes': 0
-};
 
 async function getScriptUrl() {
     
@@ -46,7 +53,7 @@ async function getAnswersFromSite() {
 function trimData( answers ) {
     
     // The date that the search sequence starts at
-    let start_date = "10/31/2023";
+    let start_date = "2023-10-31";
     
     // The puzzle sequence to look for, this one starts on Valentines Day and gets the 3 following days
     // It should be unlikely that this sequence occurs any other time
@@ -85,13 +92,17 @@ function findSequenceInArray(array, sequence) {
 
 export async function getAnswers( date_string, number_to_get ) {
     
-    const published = new Date( date_string );
-    const scheduled = published;
-    scheduled.setHours( scheduled_time.hours );
-    scheduled.setMinutes( scheduled_time.minutes );
+    let date;
+    if (date_string === null) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    const diff = getDayDifference( start_puzzle_date, published.toDateString() );
-    const start = start_puzzle_number + diff;
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date, Config.schedule.h, Config.schedule.m);
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
     
     let answers = [];
     const all_answers = await getAnswersFromSite();
@@ -108,18 +119,17 @@ export async function getAnswers( date_string, number_to_get ) {
     }
     
     // Get the difference from the start sequence and the target date
-    const sliceIndex = getDayDifference( data.start_date, date_string );
+    const sliceIndex = date.since(getSpecificDay(data.start_date)).days;
     
     // Slice the answers based on that difference and map the answer array into a comma separated string
     answers = data.answers.slice( sliceIndex, sliceIndex+number_to_get ).map( x => x[3].join(', ') );
     
     return {
         'type': 'Weaver',
-        'publishedDate': getDateDisplay( published ),
-        'scheduledDate': getDateDisplay( scheduled, true ),
-        'startingNumber': start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
     
 }
-// await getAnswers('August 16 2024', 7).then(r => console.dir(r) )

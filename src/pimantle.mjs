@@ -1,12 +1,19 @@
 import fetch from 'node-fetch';
-import {getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
+} from "./helpers.mjs";
 
-const start_date = 'May 25 2023';
-const start_puzzle_number = 457;
-const scheduled_time = {
-    'hours': 7,
-    'minutes': 0
-};
+const Config = {
+    number: 457,
+    date: getSpecificDay('2023-05-25'),
+    schedule: {
+        h: 11,
+        m: 0
+    },
+    tz: 'Indian/Maldives'
+}
 let wordList;
 await fetch("https://tryhardguides.com/wp-content/plugins/try-hard-core/media/pimantle-word-list.json")
     .then(res => res.text())
@@ -35,15 +42,19 @@ async function getAnswer( puzzleNumber ) {
 
 export async function getAnswers( date_string, number_to_get) {
     
-    let day_diff = getDayDifference( start_date, date_string );
-
-    let puzzleNumber = start_puzzle_number + day_diff;
-    let answers = [];
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    let published = new Date(date_string);
-    let scheduled = subDays( published, 1 )
-        scheduled.setHours( scheduled_time.hours );
-        scheduled.setMinutes( scheduled_time.minutes );
+    const published = date.toString();
+    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+    const diff = date.since(Config.date).days;
+    const puzzleNumber = Config.number + diff;
+    
+    let answers = [];
     
     for( let i = 0; i < number_to_get; i++ ) {
         let answer = await getAnswer( puzzleNumber+i );
@@ -52,9 +63,9 @@ export async function getAnswers( date_string, number_to_get) {
     
     return {
         'type': 'Pimantle',
-        'publishedDate': getDateDisplay( published ),
-        'scheduledDate': getDateDisplay( scheduled, true ),
-        'startingNumber': start_puzzle_number + day_diff,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': puzzleNumber,
         'answers': answers
     };
 

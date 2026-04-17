@@ -12,7 +12,7 @@ const Config = {
         h: 20,
         m: 0
     },
-    tz: 'America/New_York'
+    tz: 'America/Puerto_Rico'
 }
 
 async function getAnswerJson( date_string ) {

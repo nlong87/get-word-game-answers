@@ -1,5 +1,9 @@
 import fetch from "node-fetch";
-import {getDateDisplay, getDayDifference, subDays} from "./helpers.mjs";
+import {
+    convertDateForSQL,
+    getCurrentDayInTimezone,
+    getSpecificDay
+} from "./helpers.mjs";
 import { colornames } from 'color-name-list';
 
 /*
@@ -14,13 +18,16 @@ let dayNum = today.diff(startDay, "days") + dayOffset;
 
 */
 
-const start_puzzle_date = "August 7 2023";
-const start_puzzle_number = 500;
-const start_offset = 0;
-const scheduled_time = {
-    'hours': 18,
-    'minutes': 0
-};
+const Config = {
+    number: 500,
+    date: getSpecificDay('2023-08-07'),
+    schedule: {
+        h: 18,
+        m: 0
+    },
+    tz: 'Etc/GMT-7'
+}
+const offset = 0;
 let siteAnswers = [];
 
 
@@ -40,16 +47,19 @@ async function getAnswersFromSite() {
 
 export async function getAnswers( date_string, number_to_get ) {
     
-    const published = new Date( date_string );
-    const scheduled = subDays( published, 1 );
-    scheduled.setHours( scheduled_time.hours );
-    scheduled.setMinutes( scheduled_time.minutes );
+    let date;
+    if ( date_string === null ) {
+        date = getCurrentDayInTimezone(Config.tz);
+    } else {
+        date = getSpecificDay(date_string);
+    }
     
-    const diff = getDayDifference( start_puzzle_date, published.toDateString() );
-    const start = start_offset + diff;
+    const published = date.toString();
+    const scheduled = convertDateForSQL(date.subtract({ days: 1 }), Config.schedule.h, Config.schedule.m);
+    const diff = date.since(Config.date).days;
+    const start = offset + diff;
     
     let all_answers = await getAnswersFromSite();
-    
     let answers = all_answers.colors.slice(start, start + number_to_get)
     
     if ( ! answers ) {
@@ -57,7 +67,6 @@ export async function getAnswers( date_string, number_to_get ) {
     }
     
     let answer_names = [];
-    
     
     // Search through colors from Color-Name-List to find the nice name for the answer
     // Colordle's answers are inconsistently having and lacking spaces and are all lower-case.
@@ -75,9 +84,9 @@ export async function getAnswers( date_string, number_to_get ) {
     
     return {
         'type': 'Colordle',
-        'publishedDate': getDateDisplay( published ),
-        'scheduledDate': getDateDisplay( scheduled, true ),
-        'startingNumber': start_puzzle_number + start,
+        'publishedDate': published,
+        'scheduledDate': scheduled,
+        'startingNumber': Config.number + start,
         'answers': answer_names
     };
     
