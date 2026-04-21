@@ -13,7 +13,7 @@ const Config = {
         h: 21,
         m: 0
     },
-    tz: 'America/New_York'
+    tz: 'America/Chicago'
 }
 
 const revealed_url = "https://www.britannica.com/games/revealed";
