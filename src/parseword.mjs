@@ -1,4 +1,6 @@
-import fetch from 'node-fetch';
+import 'dotenv/config';
+import {HttpsProxyAgent} from 'https-proxy-agent';
+import axios from 'axios';
 import {
     convertDateForSQL,
     getCurrentDayInTimezone,
@@ -9,26 +11,40 @@ const Config = {
     number: 1,
     date: getSpecificDay('2026-01-29'),
     schedule: {
-        h: 20,
-        m: 0
+        h: 1,
+        m: 10
     },
     tz: 'America/Chicago'
 }
 
 async function getAnswerJson( date_string ) {
+    let response;
     const fetch_url = `https://www.parseword.com/puzzles/${date_string}.json`;
-    const response = await fetch(fetch_url, {
-        method: 'GET',
-        headers: {
-            'Accept': 'application/json, text/javascript, */*'
-        },
-    });
-    const text = await response.text();
-    if ( !text ) return null;
+    
+    if (process.env.NODE_ENV === 'production') {
+        return await proxyWebsite( fetch_url );
+    } else {
+        response = await fetch(fetch_url);
+        return await response.json();
+    }
+}
+
+async function proxyWebsite( fetch_url ) {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    
+    const username = process.env.PROXY_USERNAME;
+    const password = process.env.PROXY_PASSWORD;
+    
+    const proxy = `http://${username}:${password}@brd.superproxy.io:33335`;
     try {
-        return JSON.parse(text);
-    } catch {
-        return null;
+        const response = await axios.get(fetch_url, {
+            httpsAgent: new HttpsProxyAgent(proxy)
+        });
+        
+        return response.data;
+    } catch(error){
+        console.error('Error:', error.message);
+        return false;
     }
 }
 
@@ -68,7 +84,7 @@ export async function getAnswers( date_string, number_to_get) {
     }
     
     const published = date.toString();
-    const scheduled = convertDateForSQL(date.subtract({ days: 1 }), Config.schedule.h, Config.schedule.m);
+    const scheduled = convertDateForSQL(date, Config.schedule.h, Config.schedule.m);
     
     let puzzleNumber = Config.number + date.since(Config.date).days;
     let answers = [];
@@ -77,7 +93,6 @@ export async function getAnswers( date_string, number_to_get) {
         let answer = await getAnswer( date.add({days: i}).toString() );
         if ( answer.answer !== null ) {
             answers.push( answer );
-            
         }
     }
     
