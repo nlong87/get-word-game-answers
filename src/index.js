@@ -3,16 +3,15 @@ import express from 'express';
 import WPAPI from 'wpapi';
 import {startXvfb} from "./browser.mjs";
 import {get_answers} from "./get-answers.mjs";
-import {midnightInZone, utcYMD} from "./helpers.mjs";
 
 const PORT = process.env.PORT || 8080;
-const app = express();
 const isProd = process.env.NODE_ENV === 'production';
 
+const app = express();
 app.use(express.json());
 app.listen(PORT, () => {
     console.log(`Listening on port ${PORT}`);
-    if ( isProd ) {
+    if (isProd) {
         startXvfb();
     }
 });
@@ -32,10 +31,6 @@ export async function manual_post_answers(puzzle_type, amount_to_return = 8, sta
 }
 
 export async function process_answers(type, amount_to_return, start_date = null) {
-    
-    if ( start_date === null && type !== 'parseword' && type !== 'poeltl' && type !== 'marveldle' && type !== 'harmonies' ) {
-        start_date = utcYMD( midnightInZone() );
-    }
     
     let data = [];
     
@@ -96,10 +91,10 @@ export async function process_answers(type, amount_to_return, start_date = null)
             data = await get_answers('semantle-junior', start_date, amount_to_return);
             break;
         case 'shuffalo':
-            data = await get_answers( 'shuffalo', start_date, amount_to_return);
+            data = await get_answers('shuffalo', start_date, amount_to_return);
             break;
         case 'squareword':
-            data = await get_answers( 'squareword', start_date, amount_to_return);
+            data = await get_answers('squareword', start_date, amount_to_return);
             break;
         case 'weaver':
             data = await get_answers('weaver', start_date, 8);
@@ -144,6 +139,30 @@ async function post_data(data) {
     
 }
 
+async function send_discord_message(message) {
+    
+    const discord_url = process.env.DISCORD_WEBHOOK;
+    
+    if (!discord_url) {
+        return false;
+    }
+    
+    return await fetch(discord_url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            content: message
+        })
+    }).then(function (response) {
+        return response;
+    }).catch(function (response) {
+        console.log(response);
+        return response;
+    });
+}
+
 if (process.env.NODE_ENV !== 'production') {
     app.get('/post_answers', async (req, res) => {
         // just forward to the same handler
@@ -164,6 +183,16 @@ app.post('/post_answers', async (req, res) => {
     const answer_data = await process_answers(puzzle_type, amount);
     
     if (answer_data) {
+        const obj = answer_data[puzzle_type];
+        if (
+            Object.hasOwn(obj, 'answers') &&
+            Array.isArray(obj.answers) &&
+            obj.answers.length > 0
+        ) {
+            if (process.env.NODE_ENV !== 'production') {
+                await send_discord_message(`Posting Answers for ${puzzle_type} failed to return any data.`)
+            }
+        }
         await post_data(answer_data).then(r => res.status(200).send(r));
         
     } else {
