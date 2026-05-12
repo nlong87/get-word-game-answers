@@ -100,7 +100,7 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
             await weaver( start_date, amount_to_return ).then( r => answers['weaver'] = r );
             break;
         case 'weaver-x':
-            await weaverX( start_date, amount_to_return ).then( r => answers['weaver'] = r );
+            await weaverX( start_date, amount_to_return ).then( r => answers['weaver-x'] = r );
             break;
     }
     

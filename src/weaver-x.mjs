@@ -125,7 +125,7 @@ export async function getAnswers( date_string, number_to_get ) {
     answers = data.answers.slice( sliceIndex, sliceIndex+number_to_get ).map( x => x[3].join(', ') );
     
     return {
-        'type': 'Weaver X',
+        'type': 'weaver-x',
         'publishedDate': published,
         'scheduledDate': scheduled,
         'startingNumber': puzzleNumber,
