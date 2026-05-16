@@ -12,7 +12,7 @@ const Config = {
         h: 20,
         m: 0
     },
-    tz: 'America/Puerto_Rico'
+    tz: 'Etc/GMT'
 }
 
 const base_script = "https://harmonies.io/";

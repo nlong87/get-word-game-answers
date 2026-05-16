@@ -1,9 +1,7 @@
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import {
     convertDateForSQL,
     getCurrentDayInTimezone,
-    getSpecificDay
+    getSpecificDay, proxyWebsite
 } from "./helpers.mjs";
 
 const Config = {
@@ -102,33 +100,7 @@ async function getResponseText() {
     let text;
     if (process.env.NODE_ENV === 'production') {
         
-        puppeteer.use(StealthPlugin());
-        
-        const browser = await puppeteer.launch({
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox'
-            ],
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
-        });
-        const page = await browser.newPage();
-        
-        const realUA = await browser.userAgent();
-        const patchedUA = realUA.replace('HeadlessChrome', 'Chrome');
-        
-        const client = await page.createCDPSession();
-        await client.send('Network.setUserAgentOverride', {
-            userAgent: patchedUA,
-        });
-        
-        response = await page.goto(revealed_url, {
-            timeout: 60000,
-            waitUntil: 'domcontentloaded',
-        });
-        
-        text = await response.text();
-        
-        await browser.close();
+        return await proxyWebsite( revealed_url );
         
     } else {
         response = await fetch(revealed_url);

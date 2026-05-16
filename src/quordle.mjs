@@ -9,7 +9,7 @@ const Config = {
     number: 486,
     date: getSpecificDay('2023-05-25'),
     schedule: {
-        h: 1,
+        h: 7,
         m: 0
     },
     tz: 'Indian/Maldives'

@@ -1,10 +1,9 @@
 import 'dotenv/config';
-import {HttpsProxyAgent} from 'https-proxy-agent';
-import axios from 'axios';
 import {
     convertDateForSQL,
     getCurrentDayInTimezone,
-    getSpecificDay
+    getSpecificDay,
+    proxyWebsite
 } from "./helpers.mjs";
 
 const Config = {
@@ -26,25 +25,6 @@ async function getAnswerJson( date_string ) {
     } else {
         response = await fetch(fetch_url);
         return await response.json();
-    }
-}
-
-async function proxyWebsite( fetch_url ) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-    
-    const username = process.env.PROXY_USERNAME;
-    const password = process.env.PROXY_PASSWORD;
-    
-    const proxy = `http://${username}:${password}@brd.superproxy.io:33335`;
-    try {
-        const response = await axios.get(fetch_url, {
-            httpsAgent: new HttpsProxyAgent(proxy)
-        });
-        
-        return response.data;
-    } catch(error){
-        console.error('Error:', error.message);
-        return false;
     }
 }
 

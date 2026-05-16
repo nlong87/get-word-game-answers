@@ -189,7 +189,7 @@ app.post('/post_answers', async (req, res) => {
             Array.isArray(obj.answers) &&
             obj.answers.length > 0
         ) {
-            if (process.env.NODE_ENV !== 'production') {
+            if (process.env.NODE_ENV === 'production') {
                 await send_discord_message(`Posting Answers for ${puzzle_type} failed to return any data.`)
             }
         }

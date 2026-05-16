@@ -9,7 +9,7 @@ const Config = {
     number: 1,
     date: getSpecificDay('2025-05-19'),
     schedule: {
-        h: 16,
+        h: 17,
         m: 5
     },
     tz: 'Etc/UTC'

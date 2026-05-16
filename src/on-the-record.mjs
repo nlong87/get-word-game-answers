@@ -22,11 +22,15 @@ function ymdSlash(date) {
     return `${y}/${m}/${d}`;
 }
 
-async function getAnswer( targetDate ) {
+async function getAnswer( targetDate, bonus = false ) {
     
     const date_string = ymdSlash( targetDate );
-    const keyword_url = `https://games-service-prod.site.aws.wapo.pub/on-the-record/levels/questions/${date_string}`;
-    
+    let keyword_url;
+    if ( bonus ) {
+        keyword_url = `https://games-service-prod.site.aws.wapo.pub/on-the-record/levels/wager/${date_string}`;
+    } else {
+        keyword_url = `https://games-service-prod.site.aws.wapo.pub/on-the-record/levels/questions/${date_string}`;
+    }
     const response = await fetch(keyword_url);
     const text = await response.text();
     if ( !text ) return null;
@@ -43,7 +47,6 @@ async function getAnswer( targetDate ) {
     } catch {
         return '';
     }
-    
 }
 
 export async function getAnswers( date_string, number_to_get ) {
@@ -65,10 +68,20 @@ export async function getAnswers( date_string, number_to_get ) {
     let i = 0;
     while( i < number_to_get ) {
         
-        let answer = await getAnswer( date.add({ days: i }) );
+        let d = date.add({ days: i });
+        let answer = await getAnswer(d);
+        let bonus = '';
         
-        if ( answer ) {
-            answers.push( answer );
+        // Check if the current date is a Friday
+        if (d.dayOfWeek === 5) {
+            bonus = await getAnswer(d, true);
+        }
+        
+        if (answer) {
+            if ( bonus ) {
+                answer = answer.concat(' |~~~~| ' + bonus);
+            }
+            answers.push(answer);
         }
         
         i++;
