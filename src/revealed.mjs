@@ -31,7 +31,7 @@ function extractGameData(html) {
             scriptContent.includes('\\"gameData\\"')
         ) {
             const pushMatch = scriptContent.match(
-                /self\.__next_f\.push\(\[1,\s*("(?:[^"\\]|\\.)*")\]\)/
+                /self\.__next_f\.push\(\[1,\s*("(?:[^"\\]|\\.)*")]\)/
             );
             
             if (!pushMatch) continue;
@@ -95,20 +95,7 @@ function extractGameData(html) {
 }
 
 async function getResponseText() {
-    
-    let response;
-    let text;
-    if (process.env.NODE_ENV === 'production') {
-        
-        return await proxyWebsite( revealed_url );
-        
-    } else {
-        response = await fetch(revealed_url);
-        
-        text = await response.text();
-    }
-    
-    return text;
+    return await proxyWebsite( revealed_url );
 }
 
 async function getGameData() {

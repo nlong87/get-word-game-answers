@@ -9,8 +9,8 @@ const Config = {
     number: 1,
     date: getSpecificDay('2024-03-29'),
     schedule: {
-        h: 20,
-        m: 0
+        h: 21,
+        m: 5
     },
     tz: 'Etc/GMT'
 }

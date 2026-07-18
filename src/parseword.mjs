@@ -10,7 +10,7 @@ const Config = {
     number: 1,
     date: getSpecificDay('2026-01-29'),
     schedule: {
-        h: 1,
+        h: 2,
         m: 10
     },
     tz: 'America/Chicago'

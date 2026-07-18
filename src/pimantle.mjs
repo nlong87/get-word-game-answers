@@ -12,7 +12,7 @@ const Config = {
         h: 11,
         m: 0
     },
-    tz: 'Indian/Maldives'
+    tz: 'Etc/GMT-7'
 }
 let wordList;
 await fetch("https://tryhardguides.com/wp-content/plugins/try-hard-core/media/pimantle-word-list.json")

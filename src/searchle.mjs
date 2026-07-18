@@ -4,6 +4,7 @@ import {
     getCurrentDayInTimezone,
     getSpecificDay
 } from "./helpers.mjs";
+import {launchBrowser} from "./browser.mjs";
 
 const Config = {
     number: 1,
@@ -30,11 +31,38 @@ async function getAllAnswers() {
     return false;
 }
 
-async function getScriptContents() {
-    const js_file = 'https://searchle.net/static/js/main.a220a4dd.js';
+async function getScriptUrl() {
+    const base_url = 'https://searchle.net/';
     
-    const response = await fetch(js_file);
-    return await response.text();
+    const browser = await launchBrowser();
+    const page = await browser.newPage();
+    await page.setCacheEnabled(false);
+    
+    const client = await page.createCDPSession();
+    await client.send("Network.enable");
+    
+    await page.goto(
+        base_url,
+        { waitUntil: "domcontentloaded" }
+    );
+    
+    const scriptSources = await page.$$eval('script', scripts =>
+        scripts.map(s => s.src).filter(Boolean)
+    );
+    
+    return scriptSources.find( src => /\/static\/js\/main\.[a-z0-9-_]+\.js$/.test(src) );
+}
+
+
+async function getScriptContents() {
+    const js_file = await getScriptUrl();
+    
+    if ( js_file ) {
+        const response = await fetch(js_file);
+        return await response.text();
+    } else {
+        return '';
+    }
 }
 
 export async function getAnswers(date_string, number_to_get) {
@@ -52,8 +80,11 @@ export async function getAnswers(date_string, number_to_get) {
     const puzzleNumber = Config.number + diff;
     
     const all_answers = await getAllAnswers();
+    let answers = false;
     
-    let answers = all_answers.slice(diff, diff + number_to_get );
+    if ( all_answers ) {
+        answers = all_answers.slice(diff, diff + number_to_get );
+    }
     
     if (!answers) {
         return false;

@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:22-slim
 
 # Set Google DNS explicitly for all processes including Chromium
 RUN echo "nameserver 8.8.8.8\nnameserver 8.8.4.4" > /etc/resolv.conf.override

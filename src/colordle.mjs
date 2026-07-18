@@ -5,6 +5,7 @@ import {
     getSpecificDay
 } from "./helpers.mjs";
 import { colornames } from 'color-name-list';
+import { getColordleAnswer } from "./_colordle-functions.js";
 
 /*
 This is the way Colordle gets the day number for the answer, we use our own way instead.
@@ -48,25 +49,26 @@ async function getAnswersFromSite() {
 export async function getAnswers( date_string, number_to_get ) {
     
     let date;
-    if ( date_string === null ) {
+    if (date_string === null) {
         date = getCurrentDayInTimezone(Config.tz);
     } else {
         date = getSpecificDay(date_string);
     }
     
     const published = date.toString();
-    const scheduled = convertDateForSQL(date.subtract({ days: 1 }), Config.schedule.h, Config.schedule.m);
+    const scheduled = convertDateForSQL(date.subtract({days: 1}), Config.schedule.h, Config.schedule.m);
     const diff = date.since(Config.date).days;
     const start = offset + diff;
     
-    let all_answers = await getAnswersFromSite();
-    let answers = all_answers.colors.slice(start, start + number_to_get)
-    
-    if ( ! answers ) {
-        return false;
-    }
-    
     let answer_names = [];
+    let answers = [];
+    
+    for (let i = start; i < start + number_to_get; i++) {
+        let answer = await getColordleAnswer(i);
+        if (answer) {
+            answers.push(answer);
+        }
+    }
     
     // Search through colors from Color-Name-List to find the nice name for the answer
     // Colordle's answers are inconsistently having and lacking spaces and are all lower-case.

@@ -23,7 +23,6 @@ export async function manual_post_answers(puzzle_type, amount_to_return = 8, sta
     answer_data = await process_answers(puzzle_type, amount_to_return, start_date).then(r => answer_data = r);
     
     if (answer_data) {
-        
         return await post_data(answer_data);
     } else {
         return false;
@@ -185,12 +184,14 @@ app.post('/post_answers', async (req, res) => {
     if (answer_data) {
         const obj = answer_data[puzzle_type];
         if (
+            process.env.NODE_ENV === 'production' &&
             Object.hasOwn(obj, 'answers') &&
-            Array.isArray(obj.answers) &&
-            obj.answers.length > 0
+            Array.isArray(obj.answers)
         ) {
-            if (process.env.NODE_ENV === 'production') {
-                await send_discord_message(`Posting Answers for ${puzzle_type} failed to return any data.`)
+            if (obj.answers.length === 0) {
+                await send_discord_message(`Posting Answers for ${puzzle_type} failed to return any data.`);
+            } else if ( obj.answers.length < amount) {
+                await send_discord_message(`Posting Answers for ${puzzle_type} posted ${obj.answers.length} out of the ${amount} requested.`);
             }
         }
         await post_data(answer_data).then(r => res.status(200).send(r));

@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import { Temporal } from '@js-temporal/polyfill';
-import axios from "axios";
-import {HttpsProxyAgent} from "https-proxy-agent";
+import 'puppeteer-extra'
 
 export function getCurrentDayInTimezone(timeZone = "America/Los_Angeles") {
     return Temporal.Now.zonedDateTimeISO(timeZone).toPlainDate();
@@ -19,20 +19,22 @@ export function convertDateForSQL( date, hours, minutes ) {
 }
 
 export async function proxyWebsite( fetch_url ) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
     
-    const username = process.env.PROXY_USERNAME;
-    const password = process.env.PROXY_PASSWORD;
+    const api_key = process.env.PROXY_API_KEY;
     
-    const proxy = `http://${username}:${password}@brd.superproxy.io:33335`;
-    try {
-        const response = await axios.get(fetch_url, {
-            httpsAgent: new HttpsProxyAgent(proxy)
-        });
-        
-        return response.data;
-    } catch(error){
-        console.error('Error:', error.message);
-        return false;
-    }
+    const response = await fetch("https://api.brightdata.com/request", {
+        method: "POST",
+        headers: {
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            zone: "web_unlocker1",
+            url: fetch_url,
+            format: "raw",
+        }),
+    });
+    
+    const data = await response.text();
+    return data;
 }

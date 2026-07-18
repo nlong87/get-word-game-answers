@@ -6,15 +6,16 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "cross-env NODE_ENV=development node --watch src/index.js",
-    "deploy": "gcloud builds submit --tag us-central1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers && gcloud run deploy get-word-game-answers --image us-central1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers --region us-central1 --memory 2Gi --cpu 1 --timeout 300 --no-allow-unauthenticated --set-env-vars NODE_ENV=production --concurrency 1",
-    "deploy2": "gcloud run deploy get-word-game-answers --source . --region us-central1 --platform managed --memory 2Gi --cpu 1 --timeout 300 --concurrency 1 --allow-unauthenticated --port 8080",
-    "logs": "gcloud run services logs read get-word-game-answers --region us-central1 --limit 50"
+    "deploy": "gcloud builds submit --tag us-west1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers && gcloud run deploy get-word-game-answers --image us-west1-docker.pkg.dev/tryhard-word-games/apps/get-word-game-answers --region us-west1 --memory 2Gi --cpu 1 --timeout 300 --no-allow-unauthenticated --set-env-vars NODE_ENV=production --concurrency 1",
+    "deploy2": "gcloud run deploy get-word-game-answers --source . --region us-west1 --platform managed --memory 2Gi --cpu 1 --timeout 300 --concurrency 1 --allow-unauthenticated --port 8080",
+    "logs": "gcloud run services logs read get-word-game-answers --region us-west1 --limit 50"
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^3.0.0",
     "@js-temporal/polyfill": "^0.5.1",
     "@sparticuz/chromium": "^143.0.4",
     "axios": "^1.16.0",
+    "cheerio": "^1.2.0",
     "color-name-list": "^14.27.0",
     "dotenv": "^17.3.1",
     "express": "^4.18.2",
