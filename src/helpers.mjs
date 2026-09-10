@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.mjs';
 import { Temporal } from '@js-temporal/polyfill';
 import 'puppeteer-extra'
 
@@ -37,4 +37,44 @@ export async function proxyWebsite( fetch_url ) {
     
     const data = await response.text();
     return data;
+}
+/**
+ * Runs fetchOne(i) up to number_to_get times, keeping whatever it collects.
+ *
+ * A source that fails or runs out part-way should not discard the answers already gathered, so
+ * this stops at the first error (later days are almost always unavailable too, and retrying them
+ * is slow) and hands back both the partial list and the reason it stopped.
+ *
+ * @param {number} number_to_get - How many answers to attempt.
+ * @param {Function} fetchOne - async (index) => answer. Return false/null to signal "not published
+ *                              yet", which ends collection without recording an error.
+ * @param {string} label - Puzzle name, used in the recorded error message.
+ * @returns {Promise<{answers: Array, errors: Array}>}
+ */
+export async function collectAnswers( number_to_get, fetchOne, label = 'answers' ) {
+    
+    const answers = [];
+    const errors = [];
+    
+    for ( let i = 0; i < number_to_get; i++ ) {
+        
+        try {
+            const answer = await fetchOne( i );
+            
+            // Not published this far ahead - an expected stop, not a failure.
+            if ( answer === false || answer === null || answer === undefined ) {
+                break;
+            }
+            
+            answers.push( answer );
+            
+        } catch ( error ) {
+            const message = `${label} failed after ${answers.length} of ${number_to_get}: ${error.message}`;
+            console.error( `  ${message}` );
+            errors.push( message );
+            break;
+        }
+    }
+    
+    return { answers, errors };
 }

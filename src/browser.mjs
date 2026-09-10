@@ -43,8 +43,26 @@ export function isXvfbReady() {
     return xvfbReady;
 }
 
-export async function launchBrowser() {
+/**
+ * @param {Object} [options]
+ * @param {boolean} [options.remote] - Prefer a remote anti-bot browser (Bright Data Scraping
+ *   Browser) when SCRAPING_BROWSER_URL is configured. Needed for sites behind Firebase App Check
+ *   / reCAPTCHA Enterprise, which reject a locally driven Chromium. Falls back to local.
+ */
+export async function launchBrowser( options = {} ) {
     let browser;
+    
+    if ( options.remote && process.env.SCRAPING_BROWSER_URL ) {
+        // A remote session is billed per connection, so callers should reuse one browser across
+        // a batch rather than launching per item.
+        return await puppeteer.connect({
+            browserWSEndpoint: process.env.SCRAPING_BROWSER_URL
+        });
+    }
+    
+    if ( options.remote ) {
+        console.warn( '  SCRAPING_BROWSER_URL not set - falling back to a local browser, which App Check will likely reject.' );
+    }
     
     if ( process.env.NODE_ENV === 'production' ) {
         if (!xvfbStartPromise) {

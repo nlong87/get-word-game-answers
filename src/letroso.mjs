@@ -1,4 +1,5 @@
 import {
+    collectAnswers,
     convertDateForSQL,
     getCurrentDayInTimezone,
     getSpecificDay
@@ -15,130 +16,117 @@ const Config = {
     tz: 'Etc/UTC'
 }
 
-async function getAnswerFromSite(date_string) {
-    const browser = await launchBrowser();
-    const page = await browser.newPage();
-    await page.setCacheEnabled(false);
+const ANSWER_TIMEOUT_MS = 20000;
+const POLL_INTERVAL_MS = 500;
+
+/*
+The puzzle is delivered over Firestore's Listen channel, which the SDK streams via fetch() +
+ReadableStream (it initialises with useFetchStreams). CDP Fetch interception only exposes the
+buffered prefix of that long-poll, so the answer was frequently never visible; tapping fetch inside
+the page sees the whole stream as it arrives. An XHR tap is kept as a fallback for the SDK's
+alternate transport.
+
+Two other things are required for the page to request the puzzle at all:
+  - the tutorial modal must be marked as seen, or the game never starts on a fresh profile
+  - Firebase App Check (reCAPTCHA Enterprise) must accept the browser, which a locally driven
+    Chromium fails - see SCRAPING_BROWSER_URL in browser.mjs
+*/
+function installFirestoreTap() {
     
-    const client = await page.createCDPSession();
-    await client.send("Network.enable");
+    localStorage.setItem( 'letroso-tutorial-done-in', JSON.stringify( ['en', 'es', 'pt'] ) );
     
-    let resolveAnswer;
+    window.__letrosoAnswer = null;
+    window.__letrosoDenied = false;
     
-    const answerPromise = new Promise((resolve, reject) => {
-        resolveAnswer = resolve;
-        setTimeout(() => reject(new Error("Timeout waiting for Firestore answer")), 20000);
-    });
-    
-    await client.send("Fetch.enable", {
-        patterns: [
-            {
-                urlPattern: "*google.firestore.v1.Firestore/Listen*AID=0*TYPE=xmlhttp*",
-                requestStage: "Response"
+    const scan = ( text ) => {
+        if ( !window.__letrosoAnswer ) {
+            const match = text.match( /"answer"\s*:\s*\{\s*"stringValue"\s*:\s*"([^"]+)"/ );
+            if ( match ) {
+                window.__letrosoAnswer = match[1];
             }
-        ]
-    });
+        }
+        if ( text.includes( 'insufficient permissions' ) ) {
+            window.__letrosoDenied = true;
+        }
+    };
     
-    client.on("Fetch.requestPaused", async (event) => {
-        const { requestId, request } = event;
-        
-        const isTarget =
-            request.url.includes("google.firestore.v1.Firestore/Listen") &&
-            request.url.includes("AID=0&") &&
-            request.url.includes("TYPE=xmlhttp");
-        
-        if (!isTarget) {
+    const originalFetch = window.fetch;
+    window.fetch = async function ( ...args ) {
+        const response = await originalFetch.apply( this, args );
+        try {
+            const url = typeof args[0] === 'string' ? args[0] : ( args[0] && args[0].url ) || '';
+            if ( url.includes( 'firestore.googleapis.com' ) && response.body ) {
+                const clone = response.clone();
+                ( async () => {
+                    const reader = clone.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    for ( ;; ) {
+                        const { done, value } = await reader.read();
+                        if ( done ) break;
+                        buffer += decoder.decode( value, { stream: true } );
+                        scan( buffer );
+                    }
+                } )();
+            }
+        } catch {}
+        return response;
+    };
+    
+    const OriginalXHR = window.XMLHttpRequest;
+    window.XMLHttpRequest = function () {
+        const xhr = new OriginalXHR();
+        const grab = () => {
             try {
-                await client.send("Fetch.continueResponse", { requestId });
-            } catch (e) {
-                // Browser already closed, ignore
-            }
-            return;
-        }
-        
-        try {
-            const { body, base64Encoded } = await client.send("Fetch.getResponseBody", { requestId });
-            
-            const decoded = base64Encoded
-                ? Buffer.from(body, "base64").toString("utf8")
-                : body;
-            
-            const messages = parseBrowserChannel(decoded);
-            
-            for (const msg of messages) {
-                if (msg.documentChange?.document?.fields?.answer?.stringValue) {
-                    const answer = msg.documentChange.document.fields.answer.stringValue;
-                    resolveAnswer(answer);
-                }
-            }
-        } catch (e) {
-            if (!e.message.includes("Target closed") && !e.message.includes("Session closed")) {
-                console.warn("getResponseBody failed:", e.message);
-            }
-        }
-        
-        // Always try to continue, but don't crash if browser is already closed
-        try {
-            await client.send("Fetch.continueResponse", { requestId });
-        } catch (e) {
-            // Browser closed between getResponseBody and continueResponse — expected
-        }
-    });
-    
-    await page.goto(
-        "https://letroso.com/en/previous/" + date_string,
-        { waitUntil: "domcontentloaded" }
-    );
-    
-    try {
-        const answer = await answerPromise;
-        await browser.close();
-        return answer;
-    } catch (err) {
-        await browser.close();
-        throw err;
-    }
-    
+                if ( xhr.responseText ) scan( xhr.responseText );
+            } catch {}
+        };
+        xhr.addEventListener( 'progress', grab );
+        xhr.addEventListener( 'load', grab );
+        return xhr;
+    };
+    window.XMLHttpRequest.prototype = OriginalXHR.prototype;
 }
 
-function parseBrowserChannel(raw) {
-    const results = [];
-    let remaining = raw;
+async function getAnswerFromSite( browser, date_string ) {
     
-    while (remaining.length > 0) {
-        const newlineIdx = remaining.indexOf("\n");
-        if (newlineIdx === -1) break;
+    const page = await browser.newPage();
+    
+    try {
+        await page.setCacheEnabled( false );
+        await page.evaluateOnNewDocument( installFirestoreTap );
         
-        const lengthStr = remaining.slice(0, newlineIdx).trim();
-        const byteLength = parseInt(lengthStr, 10);
+        await page.goto(
+            'https://letroso.com/en/previous/' + date_string,
+            { waitUntil: 'domcontentloaded' }
+        );
         
-        if (isNaN(byteLength)) {
-            remaining = remaining.slice(newlineIdx + 1);
-            continue;
-        }
+        const deadline = Date.now() + ANSWER_TIMEOUT_MS;
         
-        const payloadStart = newlineIdx + 1;
-        const payloadEnd = payloadStart + byteLength;
-        if (payloadEnd > remaining.length) break;
-        
-        const payloadStr = remaining.slice(payloadStart, payloadEnd).trim();
-        remaining = remaining.slice(payloadEnd);
-        
-        try {
-            const frames = JSON.parse(payloadStr);
-            for (const [seqNum, messages] of frames) {
-                for (const msg of messages) {
-                    // Skip non-object messages like "noop"
-                    if (typeof msg !== "object" || msg === null) continue;
-                    results.push({ seq: seqNum, ...msg });
-                }
+        while ( Date.now() < deadline ) {
+            
+            const state = await page.evaluate( () => ( {
+                answer: window.__letrosoAnswer,
+                denied: window.__letrosoDenied
+            } ) );
+            
+            if ( state.answer ) {
+                return state.answer;
             }
-        } catch (e) {
-            console.warn("Parse error:", e.message, payloadStr.slice(0, 80));
+            
+            // Fail fast and say why, rather than burning the full timeout on a refusal.
+            if ( state.denied ) {
+                throw new Error( 'Firestore refused the read - Firebase App Check rejected this browser' );
+            }
+            
+            await new Promise( resolve => setTimeout( resolve, POLL_INTERVAL_MS ) );
         }
+        
+        throw new Error( 'Timeout waiting for Firestore answer' );
+        
+    } finally {
+        await page.close();
     }
-    
-    return results;
 }
 
 export async function getAnswers( date_string, number_to_get ) {
@@ -155,20 +143,21 @@ export async function getAnswers( date_string, number_to_get ) {
     const diff = date.since(Config.date).days;
     const puzzleNumber = Config.number + diff;
     
+    // One browser for the whole batch: a remote Scraping Browser session is billed per connection.
+    const browser = await launchBrowser( { remote: true } );
+    
     let answers = [];
-    let i = 0;
-    while( i < number_to_get ) {
-        
-        let answer = await getAnswerFromSite( date.add( { days: i }).toString() );
-        answers.push( answer );
-        i++;
+    let errors = [];
+    
+    try {
+        // Keep whatever was collected before a failure rather than losing the whole batch.
+        ( { answers, errors } = await collectAnswers( number_to_get,
+            ( i ) => getAnswerFromSite( browser, date.add( { days: i } ).toString() ), 'letroso' ) );
+    } finally {
+        await browser.close();
     }
     
-    if ( ! answers ) {
-        return false;
-    }
-    
-    return {
+    const result = {
         'type': 'Letroso',
         'publishedDate': published,
         'scheduledDate': scheduled,
@@ -176,4 +165,15 @@ export async function getAnswers( date_string, number_to_get ) {
         'answers': answers
     };
     
+    if ( errors.length ) {
+        // Non-enumerable so the diagnostic never reaches WordPress, matching how get-answers.mjs
+        // records dispatch-level failures. Direct access still works for the CLI and the route.
+        Object.defineProperty( result, 'errors', {
+            value: errors,
+            enumerable: false,
+            configurable: true
+        } );
+    }
+    
+    return result;
 }

@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.mjs';
 import {
     convertDateForSQL,
     getCurrentDayInTimezone,
