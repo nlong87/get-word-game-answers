@@ -6,7 +6,42 @@ import {startXvfb} from "./browser.mjs";
 import process_answers from "./process.mjs";
 
 const PORT = process.env.PORT || 8080;
+// Cloud Run's request timeout is 300s (--timeout 300 in the deploy script); warn shortly before.
+const WATCHDOG_MS = Number(process.env.WATCHDOG_MS) || 280000;
 const isProd = process.env.NODE_ENV === 'production';
+
+/*
+Nothing outside the request handler had any error coverage, so a failure during startup (Xvfb) or
+any stray rejection killed the container silently. Alert, give the webhook a bounded moment to
+flush - the process would otherwise exit before the request leaves - then exit non-zero.
+*/
+const FLUSH_MS = 2000;
+
+function installCrashHandlers() {
+    
+    let handling = false;
+    
+    const report = async (label, error) => {
+        if (handling) return;
+        handling = true;
+        
+        console.error(`${label}:`, error);
+        
+        try {
+            await Promise.race([
+                send_discord_message(`${label}: ${error?.message ?? error}`),
+                new Promise(resolve => setTimeout(resolve, FLUSH_MS))
+            ]);
+        } catch {}
+        
+        process.exit(1);
+    };
+    
+    process.on('unhandledRejection', (reason) => report('Unhandled rejection', reason));
+    process.on('uncaughtException', (error) => report('Uncaught exception', error));
+}
+
+installCrashHandlers();
 
 const app = express();
 app.use(express.json());
@@ -58,9 +93,17 @@ export async function post_data(data) {
     }).then(function (response) {
         console.log(response);
         return response;
-    }).catch(function (response) {
-        console.log(response);
-        return response;
+    }).catch(async function (error) {
+        // Previously this returned the error as though it were a response, so a 400 such as
+        // shuffalo's empty_answers looked exactly like a successful post.
+        const code = error?.code ?? 'request_failed';
+        const message = error?.message ?? String(error);
+        const status = error?.data?.status ?? '';
+        
+        console.error(`  WordPress rejected the post [${code}${status ? ' ' + status : ''}]: ${message}`);
+        await send_discord_message(`WordPress rejected the answers post [${code}${status ? ' ' + status : ''}]: ${message}`);
+        
+        throw error;
     });
     
 }
@@ -70,6 +113,8 @@ async function send_discord_message(message) {
     const discord_url = process.env.DISCORD_WEBHOOK;
     
     if (!discord_url) {
+        // Surfaced in Cloud Logging so a missing webhook does not look like "no failures".
+        console.error(`  DISCORD_WEBHOOK not set - alert dropped: ${message}`);
         return false;
     }
     
@@ -83,9 +128,9 @@ async function send_discord_message(message) {
         })
     }).then(function (response) {
         return response;
-    }).catch(function (response) {
-        console.log(response);
-        return response;
+    }).catch(function (error) {
+        console.error('  failed to deliver Discord alert:', error?.message ?? error);
+        return false;
     });
 }
 
@@ -107,10 +152,17 @@ app.post('/post_answers', async (req, res) => {
     const puzzle_type = req.query.type || req.body.type;
     const amount = req.query.amount || req.body.amount;
     
+    // Cloud Run kills the instance at --timeout 300, and nothing in-process can report after
+    // that, so warn just before the axe falls.
+    const watchdog = setTimeout(() => {
+        send_discord_message(`Posting Answers for ${puzzle_type} has run ${Math.round(WATCHDOG_MS / 1000)}s and is about to hit the Cloud Run timeout.`);
+    }, WATCHDOG_MS);
+    
     let answer_data;
     try {
         answer_data = await process_answers(puzzle_type, amount);
     } catch (error) {
+        clearTimeout(watchdog);
         // Express 4 does not catch async rejections, so without this the process exits and
         // nothing is posted at all.
         console.error(`Unhandled failure processing ${puzzle_type}:`, error);
@@ -118,10 +170,26 @@ app.post('/post_answers', async (req, res) => {
         return res.status(200).send({ error: error.message });
     }
     
-    if (answer_data?.errors?.length) {
-        for (const message of answer_data.errors) {
-            await send_discord_message(`Posting Answers: ${message}`);
+    clearTimeout(watchdog);
+    
+    // A knowingly disabled puzzle is not a failure; say so once and stop.
+    if (answer_data?.disabled) {
+        return res.status(200).send({ disabled: puzzle_type });
+    }
+    
+    // Failures land in two places: get-answers attaches dispatch-level errors to the result
+    // object, and a module (letroso) may attach its own to its envelope. Both are non-enumerable,
+    // so they have to be read explicitly rather than via Object.entries.
+    const failures = [ ...(answer_data?.errors ?? []) ];
+    
+    for (const obj of Object.values(answer_data ?? {})) {
+        if (obj?.errors?.length) {
+            failures.push(...obj.errors);
         }
+    }
+    
+    for (const message of failures) {
+        await send_discord_message(`Posting Answers for ${puzzle_type}: ${message}`);
     }
     
     if (answer_data) {
@@ -137,9 +205,26 @@ app.post('/post_answers', async (req, res) => {
                     // so a short result is expected rather than a failure.
                     await send_discord_message(`Posting Answers for ${key} posted ${obj.answers.length} out of the ${amount} requested.`);
                 }
+                
+                // WordPress only rejects a batch when *every* answer is blank, so a partly blank
+                // one posts silently and writes an empty entry.
+                const blanks = obj.answers
+                    .map((answer, index) => (typeof answer === 'string' && answer.trim() === '') ? index : -1)
+                    .filter(index => index !== -1);
+                
+                if (blanks.length) {
+                    await send_discord_message(`Posting Answers for ${key} has ${blanks.length} blank answer(s) at index ${blanks.join(', ')}.`);
+                }
             }
         }
-        await post_data(answer_data).then(r => res.status(200).send(r));
+        
+        try {
+            const response = await post_data(answer_data);
+            res.status(200).send(response);
+        } catch (error) {
+            // post_data has already alerted with the WordPress code and message.
+            res.status(200).send({ error: error?.message ?? String(error) });
+        }
         
     } else {
         res.send(false);

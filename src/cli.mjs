@@ -186,8 +186,15 @@ if ( flags.post ) {
     
     printSummary( data );
     
-    const response = await post_data( data );
-    console.log( '  Response:', JSON.stringify( response ), '\n' );
+    try {
+        const response = await post_data( data );
+        console.log( '  Response:', JSON.stringify( response ), '\n' );
+    } catch ( error ) {
+        // post_data throws when WordPress rejects the payload.
+        console.error( `\n  WordPress rejected the post: ${error?.message ?? error}\n` );
+        reportErrors( errors );
+        process.exit( 1 );
+    }
     
     if ( reportErrors( errors ) ) {
         process.exit( 1 );
