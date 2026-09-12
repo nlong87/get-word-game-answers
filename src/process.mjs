@@ -30,9 +30,24 @@ export const PUZZLE_TYPES = [
     'wordle'
 ];
 
+/*
+Puzzles that are knowingly broken upstream. A disabled type returns immediately and is flagged so
+the alert layer stays quiet about it, rather than firing "failed to return any data" on every
+scheduled run. Remove the entry to re-enable; nothing else needs changing.
+*/
+export const DISABLED_PUZZLES = {
+    'parseword': 'temporarily disabled - upstream returns a payload the parser cannot read (TypeError at parseword.mjs:41)'
+};
+
 export default async function process_answers(type, amount_to_return, start_date = null) {
     
     let data = [];
+    
+    if (Object.hasOwn(DISABLED_PUZZLES, type)) {
+        console.log(`  ${type} is disabled: ${DISABLED_PUZZLES[type]}`);
+        Object.defineProperty(data, 'disabled', { value: true, enumerable: false, configurable: true });
+        return data;
+    }
     
     switch (type) {
         
