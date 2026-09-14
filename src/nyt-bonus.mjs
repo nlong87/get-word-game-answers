@@ -23,6 +23,20 @@ const Config = {
 }
 const week_url = 'https://www.nytimes.com/svc/games/bonus/week/v1/';
 
+/*
+NYT displays no number for bonus puzzles - the page is titled just "Colorful Strands - Bonus
+Puzzles" - and the `id` in the payload is an internal identifier, not a puzzle number. It is also
+inconsistent between variants: Wordle in 1 runs 2, 3, 4 while Colorful Strands runs 907, 1089,
+1086, because those are drawn from the daily Strands pool. Number by weekly drop instead, which is
+uniform across all three and monotonic.
+*/
+const BONUS_EPOCH = getSpecificDay('2026-08-26'); // the first bonus drop is #1
+
+function getDropNumber( drop_date ) {
+    // Rounded rather than truncated so a shifted drop day cannot silently floor to the wrong week.
+    return Math.round( drop_date.since( BONUS_EPOCH ).days / 7 ) + 1;
+}
+
 function formatWordleInOne( puzzle ) {
     
     const solutions = puzzle.rounds.map( round => round.solution.toUpperCase() );
@@ -159,12 +173,12 @@ export async function getAnswers( date_string, number_to_get ) {
             
             answers.push( puzzle_config.format( puzzle ) );
             
-            // Drops are a week apart and the ids jump around, so neither the date nor the
-            // number can be extrapolated from the first answer.
+            // Drops are a week apart, so the dates cannot be extrapolated from the first answer
+            // even though the drop numbers themselves are sequential.
             answerSchedule.push({
                 'publishedDate': drop.drop_date,
                 'scheduledDate': convertDateForSQL( drop_date.subtract({days: 1}), Config.schedule.h, Config.schedule.m ),
-                'number': entry.id
+                'number': getDropNumber( drop_date )
             });
         }
         

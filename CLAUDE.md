@@ -76,8 +76,16 @@ answerSchedule: [       // parallel to answers[]; each entry's real date and num
 ]
 ```
 
-`src/strands.mjs` and `src/nyt-bonus.mjs` use this. The WP endpoint prefers `answerSchedule[i]`
-when present and falls back to extrapolation, so daily games are unaffected. `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
+Only `src/nyt-bonus.mjs` uses this, because its drops are a week apart. The WP endpoint prefers
+`answerSchedule[i]` when present and falls back to extrapolation, so daily games are unaffected.
+
+**A puzzle's `id` in an API payload is not its puzzle number.** NYT Strands is the trap: the
+payload for 2026-09-13 carries `id: 1110`, but the site displays **#924**. The ids are internal
+and non-monotonic (1109, 1111, 1110); the displayed number is just days since launch. Nothing in
+the payload hints at this, so always confirm a number against what the site renders before
+anchoring a `Config`. `src/strands.mjs` anchors at the 2024-03-04 launch as `number: 1` to make
+the relationship obvious. NYT bonus puzzles display no number at all, so `src/nyt-bonus.mjs`
+numbers them by weekly drop from the first drop on 2026-08-26. `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
 
 Dates use the Temporal polyfill via `src/helpers.mjs` (`getCurrentDayInTimezone`, `getSpecificDay`, `convertDateForSQL`) — not `Date`. `moment` is still a dependency but only appears in a comment.
 
@@ -142,6 +150,7 @@ Read from a gitignored `src/.env` via `dotenv/config`:
 
 1. Create `src/<puzzle>.mjs` following the `Config` + `getAnswers()` contract above.
 2. Add a `case` in `src/get-answers.mjs` and a matching `case` in `process_answers()` in `src/index.js`.
-3. If the puzzle isn't a consecutive daily integer sequence, populate `answerSchedule` (and
+3. Check the puzzle number against what the site *displays*, not an `id` field in the payload.
+4. If the puzzle isn't a consecutive daily integer sequence, populate `answerSchedule` (and
    `clamped` when the source caps how far ahead it publishes) — see the module contract above.
-4. Confirm the returned `type` string matches what the WordPress side expects — it is the display name, and casing has been a source of bugs (see git history for `weaver-x`).
+5. Confirm the returned `type` string matches what the WordPress side expects — it is the display name, and casing has been a source of bugs (see git history for `weaver-x`).

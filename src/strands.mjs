@@ -5,9 +5,14 @@ import {
     getSpecificDay
 } from "./helpers.mjs";
 
+/*
+Config.number is the number NYT *displays*, which is not the `id` in the JSON payload. The id is
+an internal identifier and jumps around (2026-09-13 is id 1110 but shows as #924); the displayed
+number is simply the count of days since launch. Anchoring at launch makes that self-evident.
+*/
 const Config = {
-    number: 1107,
-    date: getSpecificDay('2026-09-08'),
+    number: 1,
+    date: getSpecificDay('2024-03-04'), // NYT Strands #1
     schedule: {
         h: 18,
         m: 0
@@ -64,12 +69,10 @@ export async function getAnswers( date_string, number_to_get ) {
     const puzzleNumber = Config.number + diff;
     
     let answers = [];
-    let answerSchedule = [];
     
     for ( let i = 0; i < number_to_get; i++ ) {
         
-        const day = date.add({days: i});
-        const puzzle = await getAnswer( day );
+        const puzzle = await getAnswer( date.add({days: i}) );
         
         // NYT hasn't published this far ahead yet, so stop rather than leaving a hole.
         if ( !puzzle || puzzle.status !== 'OK' ) {
@@ -77,23 +80,17 @@ export async function getAnswers( date_string, number_to_get ) {
         }
         
         answers.push( formatStrandsAnswer( puzzle ) );
-        
-        // Strands ids aren't monotonic by date (1109, 1111, 1110), so carry each puzzle's own
-        // number instead of letting it be extrapolated from startingNumber.
-        answerSchedule.push({
-            'publishedDate': puzzle.printDate,
-            'scheduledDate': convertDateForSQL( day.subtract({days: 1}), Config.schedule.h, Config.schedule.m ),
-            'number': puzzle.id
-        });
     }
     
+    // No answerSchedule: dates are consecutive and displayed numbers are sequential, so the plain
+    // envelope describes this correctly. (It was added when the non-monotonic ids were mistaken
+    // for the puzzle numbers.)
     return {
         'type': 'NYT Strands',
         'publishedDate': published,
         'scheduledDate': scheduled,
-        'startingNumber': answerSchedule.length ? answerSchedule[0].number : puzzleNumber,
-        'answers': answers,
-        'answerSchedule': answerSchedule
+        'startingNumber': puzzleNumber,
+        'answers': answers
     };
     
 }
