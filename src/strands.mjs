@@ -14,8 +14,8 @@ const Config = {
     number: 1,
     date: getSpecificDay('2024-03-04'), // NYT Strands #1
     schedule: {
-        h: 18,
-        m: 0
+        h: 12,
+        m: 15
     },
     tz: 'Etc/UTC'
 }
