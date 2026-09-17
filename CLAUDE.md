@@ -37,6 +37,23 @@ POST /post_answers?type=<puzzle>&amount=<n>   (src/index.js)
 
 The two switch statements are redundant but both must be updated to add a puzzle. `get-answers.mjs` is also where a single type fans out to multiple result keys (e.g. `nerdle` produces `nerdle`, `nerdle-mini`, `nerdle-micro`, `nerdle-maxi`) or where the key is renamed.
 
+### Response status and retries
+
+Sources are sometimes not live yet at the scheduled minute (parseword is the usual one), so the
+route's status code is a retry signal:
+
+- **503** — the run collected nothing, so nothing was posted. `post_data()` is skipped entirely.
+  Safe to re-run, because WordPress never saw this batch.
+- **200** — everything else, including a disabled puzzle, a short or partly blank result, and a
+  WordPress rejection after a real post. Re-posting a batch WordPress has already seen is not
+  safely idempotent, so these must not be retried.
+
+Retries themselves are Cloud Scheduler's job, configured per job rather than in code: the
+`Parseword` job runs `--max-retry-attempts=3 --min-backoff=20m --max-backoff=20m` (see
+`npm run scheduler:parseword-retries`), giving attempts at roughly +0, +20, +40 and +60 minutes.
+Every other job still has `retryCount: 0`, so a 503 there is just a failed execution in the
+scheduler's logs. Each failed attempt also sends its own Discord alert.
+
 ### Puzzle module contract
 
 Every `src/<puzzle>.mjs` exports `getAnswers(date_string, number_to_get)` (a couple export `getAnswer` instead — `marveldle`, `poeltl`; `get-answers.mjs` aliases them on import) and returns:
@@ -102,7 +119,7 @@ Preserve the exact spacing.
 
 1. **Public JSON API** — most common (`wordle`, `connections`, `nerdle`, `contexto`, `jumble`, …) via `node-fetch`.
 2. **Headless browser** — `letroso`, `searchle` use `launchBrowser()` from `src/browser.mjs`. These typically load the site, find the hashed `main.<hash>.js` bundle, and regex the answer array out of it; some `eval`/`Function` the matched literal.
-3. **Bright Data proxy** — `parseword`, `revealed` call `proxyWebsite(url)` from `helpers.mjs` **only when `NODE_ENV === 'production'`**, and fetch directly in development. Note `proxyWebsite` returns raw text, so production and dev return different shapes in `parseword`; keep that in mind when debugging a prod-only failure.
+3. **Bright Data proxy** — `parseword`, `revealed` call `proxyWebsite(url)` from `helpers.mjs` **only when `NODE_ENV === 'production'`**, and fetch directly in development. Note `proxyWebsite` returns raw text and no status code, so a proxied module has to parse (and validate) the body itself — `parseword` does this in `getAnswerJson`, which returns parsed JSON or `null` in both environments; a day that isn't published yet answers 403 with the body `Forbidden`.
 4. **Weekly index discovery** — `nyt-bonus` only. See below.
 5. **Bundled static data** — files prefixed `_` are data or vendored site logic, not scrapers: `_phrazle-answers.mjs`, `_quordle-answers.mjs`, `_semantle-child-words.mjs`, `_colordle-functions.js`. Phrazle/Quordle index into these lists by day offset (Phrazle wraps around the list when it runs off the end).
 

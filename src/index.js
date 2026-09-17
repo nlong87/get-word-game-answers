@@ -142,6 +142,20 @@ if (process.env.NODE_ENV !== 'production') {
     });
 }
 
+/*
+Retry signal. A run that collected nothing also posted nothing, so simply running it again later is
+safe - and is usually all that is needed, because the source (parseword, most often) just was not
+live yet at the scheduled minute. The route answers 503 in that case and Cloud Scheduler retries it
+per the job's retryConfig; a job without one merely records a failed execution, which is still
+better visibility than today's silent 200. Anything that did reach WordPress stays 200: re-posting
+a batch WordPress has already seen is not safely idempotent.
+*/
+function collectedNothing(answer_data) {
+    return !Object.values(answer_data ?? {}).some(
+        obj => Array.isArray(obj?.answers) && obj.answers.length > 0
+    );
+}
+
 app.post('/post_answers', async (req, res) => {
     // Optional: verify the request is from Cloud Scheduler
     const userAgent = req.headers['user-agent'] || '';
@@ -166,8 +180,8 @@ app.post('/post_answers', async (req, res) => {
         // Express 4 does not catch async rejections, so without this the process exits and
         // nothing is posted at all.
         console.error(`Unhandled failure processing ${puzzle_type}:`, error);
-        await send_discord_message(`Posting Answers for ${puzzle_type} threw: ${error.message}`);
-        return res.status(200).send({ error: error.message });
+        await send_discord_message(`Posting Answers for ${puzzle_type} threw: ${error.message} - nothing was posted, answering 503 so the scheduler can retry.`);
+        return res.status(503).send({ error: error.message, retryable: true });
     }
     
     clearTimeout(watchdog);
@@ -192,42 +206,48 @@ app.post('/post_answers', async (req, res) => {
         await send_discord_message(`Posting Answers for ${puzzle_type}: ${message}`);
     }
     
-    if (answer_data) {
-        if (process.env.NODE_ENV === 'production') {
-            for (const [key, obj] of Object.entries(answer_data)) {
-                if (!obj || !Array.isArray(obj.answers)) {
-                    continue;
-                }
-                if (obj.answers.length === 0) {
-                    await send_discord_message(`Posting Answers for ${key} failed to return any data.`);
-                } else if (!obj.clamped && obj.answers.length < amount) {
-                    // clamped puzzles are capped by how far ahead the source has published,
-                    // so a short result is expected rather than a failure.
-                    await send_discord_message(`Posting Answers for ${key} posted ${obj.answers.length} out of the ${amount} requested.`);
-                }
-                
-                // WordPress only rejects a batch when *every* answer is blank, so a partly blank
-                // one posts silently and writes an empty entry.
-                const blanks = obj.answers
-                    .map((answer, index) => (typeof answer === 'string' && answer.trim() === '') ? index : -1)
-                    .filter(index => index !== -1);
-                
-                if (blanks.length) {
-                    await send_discord_message(`Posting Answers for ${key} has ${blanks.length} blank answer(s) at index ${blanks.join(', ')}.`);
-                }
+    // Posting an empty payload only earns a WordPress rejection and a second, misleading alert,
+    // so stop here instead and let the caller come back.
+    if (collectedNothing(answer_data)) {
+        await send_discord_message(`Posting Answers for ${puzzle_type} returned no data - nothing was posted, answering 503 so the scheduler can retry.`);
+        return res.status(503).send({ error: 'no answers collected', type: puzzle_type, retryable: true });
+    }
+    
+    // Past this point at least one key has answers. A key that came back empty alongside a full
+    // one (nerdle, nyt-bonus) is still worth an alert, but not a retry - the full keys are about
+    // to be posted.
+    if (process.env.NODE_ENV === 'production') {
+        for (const [key, obj] of Object.entries(answer_data)) {
+            if (!obj || !Array.isArray(obj.answers)) {
+                continue;
+            }
+            if (obj.answers.length === 0) {
+                await send_discord_message(`Posting Answers for ${key} failed to return any data.`);
+            } else if (!obj.clamped && obj.answers.length < amount) {
+                // clamped puzzles are capped by how far ahead the source has published,
+                // so a short result is expected rather than a failure.
+                await send_discord_message(`Posting Answers for ${key} posted ${obj.answers.length} out of the ${amount} requested.`);
+            }
+            
+            // WordPress only rejects a batch when *every* answer is blank, so a partly blank
+            // one posts silently and writes an empty entry.
+            const blanks = obj.answers
+                .map((answer, index) => (typeof answer === 'string' && answer.trim() === '') ? index : -1)
+                .filter(index => index !== -1);
+            
+            if (blanks.length) {
+                await send_discord_message(`Posting Answers for ${key} has ${blanks.length} blank answer(s) at index ${blanks.join(', ')}.`);
             }
         }
-        
-        try {
-            const response = await post_data(answer_data);
-            res.status(200).send(response);
-        } catch (error) {
-            // post_data has already alerted with the WordPress code and message.
-            res.status(200).send({ error: error?.message ?? String(error) });
-        }
-        
-    } else {
-        res.send(false);
+    }
+    
+    try {
+        const response = await post_data(answer_data);
+        res.status(200).send(response);
+    } catch (error) {
+        // post_data has already alerted with the WordPress code and message. This stays 200: the
+        // batch may well have been written before the failure, and a retry would duplicate it.
+        res.status(200).send({ error: error?.message ?? String(error) });
     }
     
 });

@@ -36,7 +36,7 @@ the alert layer stays quiet about it, rather than firing "failed to return any d
 scheduled run. Remove the entry to re-enable; nothing else needs changing.
 */
 export const DISABLED_PUZZLES = {
-    'parseword': 'temporarily disabled - upstream returns a payload the parser cannot read (TypeError at parseword.mjs:41)'
+    'letroso': 'temporarily disabled'
 };
 
 export default async function process_answers(type, amount_to_return, start_date = null) {
