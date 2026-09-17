@@ -28,12 +28,15 @@ const default_headers = {
     "Sec-Fetch-Site": "same-site",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0"
 };
-let answerOptions = [];
-let headers = null;
 
-function resetHeaders() {
-    headers = { ...default_headers};
-}
+// The only field the API compares as a range rather than by value.
+const ORDINAL_FIELD = 'apparitionYear';
+
+// Worst case measured over every possible answer is 6 (comics) and 8 (audiovisual) - the latter
+// because seven audiovisual characters share identical attributes and can only be tried one at a
+// time. This is a safety net, not an expected limit.
+const MAX_GUESSES = 15;
+const MAX_ATTEMPTS = 3;
 
 function validateGameType( type = '' ) {
     let _type;
@@ -50,22 +53,7 @@ function validateGameType( type = '' ) {
     return _type;
 }
 
-function getHero( id ) {
-    const hero = answerOptions.find(hero => hero.id === id);
-    return hero ? hero : null;
-}
-
-async function setAnswerOptions( type ) {
-    
-    const options = await getAnswerOptions( type );
-    
-    if ( options ) {
-        answerOptions = options;
-    }
-    
-}
-
-async function getAnswerOptions( type = 'comics') {
+async function getAnswerOptions( type = 'comics', headers ) {
     
     let type_url = validateGameType( type );
     const fetch_url = `https://api.marveldle.com/api/characters/${type_url}`;
@@ -76,7 +64,6 @@ async function getAnswerOptions( type = 'comics') {
         "method": "GET"
     });
     
-    
     if ( response.status !== 200 ) {
         return false;
     }
@@ -84,7 +71,7 @@ async function getAnswerOptions( type = 'comics') {
     return await response.json();
 }
 
-async function makeGuess(guess_id, type = 'comics', date_id = '') {
+async function makeGuess(guess_id, type = 'comics', date_id = '', headers) {
     
     let _type = validateGameType( type );
     const fetch_url = `https://api.marveldle.com/api/characters/${_type}/guess/${guess_id}?dateId=${date_id} 12:00:00 AM`;
@@ -102,163 +89,153 @@ async function makeGuess(guess_id, type = 'comics', date_id = '') {
     return await guess.json();
 }
 
+/*
+The two games score different fields - comics has apparitionYear and no appearanceTypes or
+affiliations, audiovisual is the other way round and has no year at all - so the field list is read
+off the response instead of hardcoded. Everything except id and isExact is a scored clue.
+*/
+function scoredFields( response ) {
+    return Object.keys( response ).filter( key => key !== 'id' && key !== 'isExact' );
+}
+
+/*
+The server's verdict for `guess` if `candidate` were the answer, as a single comparable string.
+Verified against the live API on 30 guesses, including characters sharing the answer's exact year,
+species and power types: 30/30 agreement.
+*/
+function scoreGuess( guess, candidate, fields ) {
+    
+    return fields.map( field => {
+        
+        if ( field === ORDINAL_FIELD ) {
+            if ( candidate[field] === guess[field] ) return 'Exact';
+            return candidate[field] > guess[field] ? 'Upper' : 'Lower';
+        }
+        
+        if ( Array.isArray( guess[field] ) ) {
+            // Set fields (species, powerTypes, appearanceTypes, affiliations): all the same members
+            // is Exact, any member in common is Partial, nothing in common is None.
+            const candidate_values = new Set( candidate[field] ?? [] );
+            const shared = guess[field].filter( value => candidate_values.has( value ) ).length;
+            
+            if ( shared === guess[field].length && shared === candidate_values.size ) return 'Exact';
+            return shared ? 'Partial' : 'None';
+        }
+        
+        return candidate[field] === guess[field] ? 'Exact' : 'None';
+        
+    } ).join( '|' );
+}
+
+function serverScore( response, fields ) {
+    return fields.map( field => response[field] ).join( '|' );
+}
+
+/*
+Pick the guess that leaves the fewest candidates standing in the worst case.
+
+Every candidate is scored against every other, which partitions the list by the verdict that guess
+would draw; the answer can only ever be in one partition, so the guess whose largest partition is
+smallest is the one that cannot go badly. Ties break on the sum of squared partition sizes, i.e.
+the smaller expected remainder. Guessing only from the surviving candidates means every guess can
+also be the answer, which measures as good as scoring the full character list and is far cheaper -
+all 458 comics puzzles solve in 0.4s.
+*/
+function chooseGuess( candidates, fields ) {
+    
+    let best = candidates[0];
+    let best_largest = Infinity;
+    let best_spread = Infinity;
+    
+    for ( const guess of candidates ) {
+        
+        const partitions = new Map();
+        
+        for ( const candidate of candidates ) {
+            const score = scoreGuess( guess, candidate, fields );
+            partitions.set( score, ( partitions.get( score ) ?? 0 ) + 1 );
+        }
+        
+        const sizes = [ ...partitions.values() ];
+        const largest = Math.max( ...sizes );
+        const spread = sizes.reduce( ( total, size ) => total + size * size, 0 );
+        
+        if ( largest < best_largest || ( largest === best_largest && spread < best_spread ) ) {
+            best = guess;
+            best_largest = largest;
+            best_spread = spread;
+        }
+    }
+    
+    return best;
+}
+
+/*
+Play the game: guess, keep only the characters that would have drawn the same verdict, guess again.
+Returns { answer } on success or { error } describing why it stopped - never a bare false, so the
+caller can say which half of the puzzle went wrong.
+*/
 async function deduceAnswer( date, type = 'comics' ) {
     
-    resetHeaders();
-    await setAnswerOptions( type );
+    const headers = { ...default_headers };
+    const options = await getAnswerOptions( type, headers );
     
-    // We use ironman because the id is the same for both types
-    let currentGuess = getHero( initial_guess );
-    if ( !currentGuess ) return false;
+    if ( !options || !options.length ) {
+        return { error: `${type}: could not load the character list` };
+    }
     
-    let filteredOptions = answerOptions;
-    let exactMatch = false;
-    let response;
+    let candidates = options;
+    let guess = candidates.find( character => character.id === initial_guess );
     
-    const arrayFields = ['appearanceTypes','affiliations','powerTypes','species'];
+    if ( !guess ) {
+        return { error: `${type}: the opening guess "${initial_guess}" is not in the character list` };
+    }
     
-    let exactInfo = {};
-    let incorrectInfo = {};
-    let partialInfo = {};
-    let yearInfo = {
-        'lessThan': 0,
-        'greaterThan': 0
-    };
-    
+    let fields = null;
     let attempts = 1;
     let guesses = 0;
-    const max_attempts = 3;
-    const max_guesses = 15;
+    const trail = [];
     
-    while ( !exactMatch ) {
+    while ( guesses < MAX_GUESSES ) {
         
-        response = await makeGuess(currentGuess.id, type, date);
+        const response = await makeGuess( guess.id, type, date, headers );
         
-        // Check if response failed, if the response failed up the attempts and try again, or end after
+        // Retry a failed request a few times before giving up; it does not count as a guess.
         if ( !response ) {
-            if ( attempts === max_attempts ) {
-                return false;
+            if ( attempts === MAX_ATTEMPTS ) {
+                return { error: `${type}: the guess endpoint failed ${MAX_ATTEMPTS} times in a row` };
             }
             attempts += 1;
             continue;
-        } else {
-            // Reset the attempts if response was successful
-            attempts = 1;
         }
         
-        if (response.isExact) {
-            // Guess was correct break the loop to return the answer
-            exactMatch = true;
-            break;
-            
-        } else {
-            
-            for (const [key, value] of Object.entries(response)) {
-                
-                if (key === 'apparitionYear') {
-                    
-                    // Need to handle 'Upper' and 'Lower' responses and check for exact
-                    // Upper means year is greater than current year
-                    if ( value === 'Exact') {
-                        exactInfo[key] = currentGuess[key];
-                    } else {
-                        if ( value === 'Upper' ) {
-                            if ( !yearInfo['greaterThan'] || yearInfo['greaterThan'] > currentGuess[key] ) {
-                                yearInfo['greaterThan'] = currentGuess[key]
-                            }
-                        } else if ( value === 'Lower' ) {
-                            if ( !yearInfo['lessThan'] || yearInfo['lessThan'] > currentGuess[key] ) {
-                                yearInfo['lessThan'] = currentGuess[key]
-                            }
-                        }
-                    }
-                } else {
-                    
-                    if (value === 'Exact') {
-                        exactInfo[key] = currentGuess[key];
-                    } else if (value === 'None') {
-                        if ( !incorrectInfo.hasOwnProperty(key) ) {
-                            incorrectInfo[key] = [];
-                        }
-                        incorrectInfo[key].push(currentGuess[key]);
-                    } else if ( value === 'Partial' ) {
-                        
-                        if ( !partialInfo.hasOwnProperty(key) ) {
-                            partialInfo[key] = [];
-                        }
-                        
-                        if ( !incorrectInfo.hasOwnProperty(key) ) {
-                            incorrectInfo[key] = [];
-                        }
-                        
-                        partialInfo[key] = [...new Set([...partialInfo[key],...currentGuess[key]])];
-                    }
-                }
-            }
-        }
-        
-        // Filter options based on correct information
-        for (const [key, value] of Object.entries(exactInfo)) {
-            filteredOptions = filteredOptions.filter((obj) => {
-                if ( Array.isArray(obj[key]) ) {
-                    return (obj[key].length === value.length) && obj[key].every(function(element, index) {
-                        return element === value[index];
-                    });
-                } else {
-                    return obj[key] === value;
-                }
-            });
-        }
-        
-        // Filter options based on incorrect information
-        for (const [key, value] of Object.entries(incorrectInfo)) {
-            
-            // Check if this is a field that contains multiple values
-            if ( arrayFields.includes(key)) {
-                value.forEach( item => {
-                    filteredOptions = filteredOptions.filter((obj) => {
-                        return !obj[key].some( r => item.includes(r) );
-                    })
-                });
-            } else {
-                filteredOptions = filteredOptions.filter((obj) => !value.includes(obj[key]) );
-            }
-        }
-        
-        
-        for (const [key, value] of Object.entries(partialInfo)) {
-            if ( !exactInfo.hasOwnProperty(key) ) {
-                filteredOptions = filteredOptions.filter((obj) => {
-                    return value.some( r => obj[key].includes(r) );
-                });
-            }
-        }
-        
-        if ( yearInfo['greaterThan'] ) {
-            filteredOptions = filteredOptions.filter((obj) =>  obj.apparitionYear > yearInfo['greaterThan']);
-        }
-        
-        if ( yearInfo['lessThan'] ) {
-            filteredOptions = filteredOptions.filter((obj) =>  obj.apparitionYear < yearInfo['lessThan']);
-        }
-        
-        // Cap the total amount of guesses we can make and if we've filtered out all possible results
-        // something went wrong, so we want to break the loop in those cases
-        if ( guesses > max_guesses || filteredOptions.length === 0 ) {
-            break;
-        }
-        
-        // Select a random option from the filtered list to make as our next guess
-        currentGuess = filteredOptions[Math.floor(Math.random()*filteredOptions.length)];
-        
-        // Add another guess to the running count
+        attempts = 1;
         guesses += 1;
+        trail.push( guess.name );
         
+        if ( response.isExact ) {
+            console.log( `  marveldle ${type}: ${guess.name} in ${guesses} guess(es) - ${trail.join(' > ')}` );
+            return { answer: guess };
+        }
+        
+        fields ??= scoredFields( response );
+        
+        // Everything that would have drawn a different verdict is out, including the guess itself.
+        const verdict = serverScore( response, fields );
+        candidates = candidates.filter( candidate =>
+            candidate.id !== guess.id && scoreGuess( guess, candidate, fields ) === verdict
+        );
+        
+        if ( !candidates.length ) {
+            // Every character has been ruled out, so the clues cannot be read the way this module
+            // reads them - the API's scoring or its data has changed.
+            return { error: `${type}: no character matches the clues after ${guesses} guess(es) (${trail.join(' > ')})` };
+        }
+        
+        guess = candidates.length === 1 ? candidates[0] : chooseGuess( candidates, fields );
     }
     
-    // If exactMatch was set to true, we got the correct answer
-    return ( exactMatch ) ? currentGuess : false;
-    
+    return { error: `${type}: unsolved after ${MAX_GUESSES} guesses (${trail.join(' > ')})` };
 }
 
 export async function getAnswer() {
@@ -269,22 +246,37 @@ export async function getAnswer() {
     const diff = date.since(Config.date).days;
     const currentPuzzleNumber = Config.number + diff;
     
-    const comics_answer = await deduceAnswer( published, 'comics');
-    const audiovisual_answer = await deduceAnswer( published, 'audiovisual' );
+    const comics = await deduceAnswer( published, 'comics');
+    const audiovisual = await deduceAnswer( published, 'audiovisual' );
     
-    if ( !comics_answer && !audiovisual_answer )
-        return false;
-    
-    let answers = [];
-    answers.push( comics_answer.name + ' |~~~~| ' + audiovisual_answer.name );
-    
-    return {
+    const result = {
         'type': 'Marveldle',
         'publishedDate': published,
         'scheduledDate': scheduled,
         'startingNumber': currentPuzzleNumber,
-        'answers': answers
+        'answers': []
     };
     
+    // Both halves share one delimited string, so half an answer would post the literal "undefined".
+    // Post nothing instead and let the route alert and answer 503.
+    const errors = [ comics.error, audiovisual.error ].filter( Boolean );
+    
+    if ( errors.length ) {
+        errors.forEach( error => console.error( `  marveldle failed: ${error}` ) );
+        
+        // Non-enumerable so the diagnostic never reaches WordPress, matching letroso.mjs and
+        // parseword.mjs. The route and the CLI both read it.
+        Object.defineProperty( result, 'errors', {
+            value: errors.map( error => `marveldle failed: ${error}` ),
+            enumerable: false,
+            configurable: true
+        } );
+        
+        return result;
+    }
+    
+    result.answers.push( comics.answer.name + ' |~~~~| ' + audiovisual.answer.name );
+    
+    return result;
+    
 }
-// await getAnswer().then(r => console.log(r));

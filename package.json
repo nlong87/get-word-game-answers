@@ -18,7 +18,7 @@
     "answers:jumble": "node src/cli.mjs jumble",
     "answers:keyword": "node src/cli.mjs keyword",
     "answers:letroso": "node src/cli.mjs letroso --amount 2",
-    "answers:marveldle": "node src/cli.mjs marveldle",
+    "answers:marveldle": "node src/cli.mjs marveldle --amount 1",
     "answers:nerdle": "node src/cli.mjs nerdle",
     "answers:nyt-bonus": "node src/cli.mjs nyt-bonus",
     "answers:on_the_record": "node src/cli.mjs on_the_record",
