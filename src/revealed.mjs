@@ -17,81 +17,58 @@ const Config = {
 const revealed_url = "https://www.britannica.com/games/revealed";
 let cachedGameData = [];
 
+/*
+The page is an Astro site. The puzzles ride in the `props` attribute of the RevealedIsland
+<astro-island>: HTML-escaped JSON in Astro's serialization, where every value is a [type, value]
+pair (0 = plain value or object, 1 = array). `puzzles` holds the last few weeks plus the next day;
+`puzzle` is today's alone. (Until 2026-09 this was a Next.js page with a `gameData` RSC payload.)
+*/
+function decodeHtmlAttribute(value) {
+    return value
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+}
+
+function reviveAstroProp([type, value]) {
+    if (type === 1) {
+        return value.map(reviveAstroProp);
+    }
+    if (type === 0 && value && typeof value === 'object' && !Array.isArray(value)) {
+        return Object.fromEntries(
+            Object.entries(value).map(([key, prop]) => [key, reviveAstroProp(prop)])
+        );
+    }
+    return value;
+}
+
 function extractGameData(html) {
-    // Match all the script tags
-    const scriptTagRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
-    let match;
     
-    while ((match = scriptTagRegex.exec(html)) !== null) {
-        const scriptContent = match[1];
-        
-        // Find the script content that contains the gameData
-        if (
-            scriptContent.includes("self.__next_f.push") &&
-            scriptContent.includes('\\"gameData\\"')
-        ) {
-            const pushMatch = scriptContent.match(
-                /self\.__next_f\.push\(\[1,\s*("(?:[^"\\]|\\.)*")]\)/
-            );
-            
-            if (!pushMatch) continue;
-            
-            let innerString;
-            try {
-                innerString = JSON.parse(pushMatch[1]);
-            } catch (e) {
-                console.error("Failed to parse inner string:", e.message);
-                continue;
-            }
-            
-            // Strip the RSC row prefix (e.g. "13:" or "ab3f:") before the JSON value
-            const colonIndex = innerString.indexOf(":");
-            if (colonIndex === -1) continue;
-            const jsonPart = innerString.slice(colonIndex + 1);
-            
-            let payload;
-            try {
-                payload = JSON.parse(jsonPart);
-            } catch (e) {
-                console.error("Failed to parse payload:", e.message);
-                continue;
-            }
-            
-            // Find gameData within the parsed array
-            const dataChunk = JSON.stringify(payload);
-            
-            const gameDataIndex = dataChunk.indexOf('"gameData"');
-            if (gameDataIndex === -1) continue;
-            
-            const valueColonIndex = dataChunk.indexOf(":", gameDataIndex);
-            const valueStart = dataChunk.indexOf("{", valueColonIndex);
-            
-            let depth = 0;
-            let valueEnd = -1;
-            for (let i = valueStart; i < dataChunk.length; i++) {
-                if (dataChunk[i] === "{") depth++;
-                else if (dataChunk[i] === "}") {
-                    depth--;
-                    if (depth === 0) {
-                        valueEnd = i;
-                        break;
-                    }
-                }
-            }
-            
-            if (valueEnd === -1) continue;
-            
-            const gameDataJson = dataChunk.slice(valueStart, valueEnd + 1);
-            
-            try {
-                return JSON.parse(gameDataJson).data;
-            } catch (e) {
-                console.error("Failed to parse gameData JSON:", e.message);
-            }
-        }
+    const islandRegex = /<astro-island\b[^>]*component-url="[^"]*RevealedIsland[^"]*"[^>]*props="([^"]*)"/;
+    const match = html?.match(islandRegex);
+    
+    if (!match) {
+        console.error("Revealed: RevealedIsland props not found in page");
+        return null;
     }
     
-    return null;
+    let props;
+    try {
+        props = reviveAstroProp([0, JSON.parse(decodeHtmlAttribute(match[1]))]);
+    } catch (e) {
+        console.error("Failed to parse RevealedIsland props:", e.message);
+        return null;
+    }
+    
+    const puzzles = Array.isArray(props.puzzles) ? [...props.puzzles] : [];
+    
+    if (props.puzzle && !puzzles.some(x => x.published_date === props.puzzle.published_date)) {
+        puzzles.push(props.puzzle);
+    }
+    
+    return puzzles.length ? puzzles : null;
 }
 
 async function getResponseText() {
