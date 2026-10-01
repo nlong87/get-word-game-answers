@@ -8,8 +8,6 @@ process_answers (scrape only) and manual_post_answers (scrape, then POST to REST
 Production is unaffected - Cloud Run runs src/index.js and Cloud Scheduler drives /post_answers.
 */
 
-const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1', '0.0.0.0'];
-
 function usage( message ) {
     if ( message ) {
         console.error( `\n  ${message}` );
@@ -20,8 +18,9 @@ function usage( message ) {
     --amount N          how many to fetch (default 8)
     --date YYYY-MM-DD   start date (default: today, in each puzzle's own timezone)
     --post              POST the result to REST_ENDPOINT instead of just printing it
-    --yes               allow --post to a non-local REST_ENDPOINT
     --json              print the raw result object instead of a summary
+    --only KEY[,KEY]    keep only these result keys (e.g. gamedle-event) - for re-posting one
+                        mode of a fan-out type without duplicating the others
 
   Types:
 ${PUZZLE_TYPES.map( t => `    ${t}` ).join('\n')}
@@ -29,7 +28,7 @@ ${PUZZLE_TYPES.map( t => `    ${t}` ).join('\n')}
 }
 
 function parseArgs( argv ) {
-    const flags = { amount: 8, date: null, post: false, yes: false, json: false };
+    const flags = { amount: 8, date: null, post: false, json: false, only: null };
     let type = null;
     
     for ( let i = 0; i < argv.length; i++ ) {
@@ -37,10 +36,12 @@ function parseArgs( argv ) {
         
         switch ( arg ) {
             case '--post': flags.post = true; break;
-            case '--yes': flags.yes = true; break;
+            // --post no longer needs confirming for a remote host; still accepted so older commands run.
+            case '--yes': break;
             case '--json': flags.json = true; break;
             case '--amount': flags.amount = parseInt( argv[++i] ); break;
             case '--date': flags.date = argv[++i]; break;
+            case '--only': flags.only = ( argv[++i] ?? '' ).split(',').map( k => k.trim() ).filter( Boolean ); break;
             default:
                 if ( arg.startsWith('-') ) {
                     return { error: `Unknown option: ${arg}` };
@@ -65,7 +66,41 @@ function parseArgs( argv ) {
         return { error: `--date must look like YYYY-MM-DD (got: ${flags.date})` };
     }
     
+    if ( flags.only !== null && !flags.only.length ) {
+        return { error: '--only needs at least one result key.' };
+    }
+    
     return { type, flags };
+}
+
+/*
+Narrows a result to the --only keys. A type such as gamedle or nerdle posts several keys at once,
+and WordPress is not idempotent, so re-posting one missed key must not re-send the rest. Errors are
+non-enumerable, so they are carried over by hand: dispatch-level ones always, per-key ones only for
+the keys that are kept.
+*/
+function selectKeys( data, only ) {
+    
+    if ( !only ) {
+        return data;
+    }
+    
+    const missing = only.filter( key => !Object.hasOwn( data ?? {}, key ) );
+    
+    if ( missing.length ) {
+        console.error( `\n  --only: no result for ${missing.join(', ')} (got: ${Object.keys( data ?? {} ).join(', ') || 'nothing'})` );
+        console.error( `  Nothing was sent.\n` );
+        reportErrors( collectErrors( data ) );
+        process.exit( 1 );
+    }
+    
+    const selected = Object.fromEntries( only.map( key => [key, data[key]] ) );
+    
+    if ( data?.errors?.length ) {
+        Object.defineProperty( selected, 'errors', { value: data.errors, enumerable: false, configurable: true } );
+    }
+    
+    return selected;
 }
 
 // Most modules return delimited strings, but some (Strands) return a structured object.
@@ -168,20 +203,13 @@ if ( flags.post ) {
         process.exit( 1 );
     }
     
-    const isLocal = LOCAL_HOSTS.includes( host );
     
-    if ( !isLocal && !flags.yes ) {
-        console.error( `\n  Refusing to post to a non-local host: ${host}` );
-        console.error( `  Nothing was sent. Re-run with --yes if that is really what you want.\n` );
-        process.exit( 1 );
-    }
-    
-    console.log( `\n  Posting ${type} (amount ${flags.amount}${flags.date ? `, from ${flags.date}` : ''}) -> ${host}${isLocal ? '' : '   [REMOTE, --yes given]'}` );
+    console.log( `\n  Posting ${type}${flags.only ? ` [only ${flags.only.join(', ')}]` : ''} (amount ${flags.amount}${flags.date ? `, from ${flags.date}` : ''}) -> ${host}` );
     
     // Imported here rather than at the top so a dry run never pulls in express, WPAPI or puppeteer.
     const { post_data } = await import( './index.js' );
     
-    const data = await process_answers( type, flags.amount, flags.date );
+    const data = selectKeys( await process_answers( type, flags.amount, flags.date ), flags.only );
     const errors = collectErrors( data );
     
     printSummary( data );
@@ -202,7 +230,7 @@ if ( flags.post ) {
     
 } else {
     
-    const data = await process_answers( type, flags.amount, flags.date );
+    const data = selectKeys( await process_answers( type, flags.amount, flags.date ), flags.only );
     
     if ( flags.json ) {
         console.log( JSON.stringify( data, null, 2 ) );
