@@ -20,6 +20,7 @@ export const PUZZLE_TYPES = [
     'poeltl',
     'quordle',
     'revealed',
+    'scrandle',
     'searchle',
     'semantle-junior',
     'shuffalo',
@@ -101,6 +102,9 @@ export default async function process_answers(type, amount_to_return, start_date
             break;
         case 'revealed':
             data = await get_answers('revealed', start_date, amount_to_return);
+            break;
+        case 'scrandle':
+            data = await get_answers('scrandle', start_date, amount_to_return);
             break;
         case 'searchle':
             data = await get_answers('searchle', start_date, amount_to_return);

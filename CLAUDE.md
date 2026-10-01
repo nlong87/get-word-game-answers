@@ -102,7 +102,9 @@ and non-monotonic (1109, 1111, 1110); the displayed number is just days since la
 the payload hints at this, so always confirm a number against what the site renders before
 anchoring a `Config`. `src/strands.mjs` anchors at the 2024-03-04 launch as `number: 1` to make
 the relationship obvious. NYT bonus puzzles display no number at all, so `src/nyt-bonus.mjs`
-numbers them by weekly drop from the first drop on 2026-08-26. `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
+numbers them by weekly drop from the first drop on 2026-08-26. Scrandle displays no number either
+(its share text is the date), so `src/scrandle.mjs` counts days from 2025-04-01, the earliest day
+its `/history` endpoint serves; it only ever publishes today, hence `clamped: true`. `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
 
 Dates use the Temporal polyfill via `src/helpers.mjs` (`getCurrentDayInTimezone`, `getSpecificDay`, `convertDateForSQL`) — not `Date`. `moment` is still a dependency but only appears in a comment.
 

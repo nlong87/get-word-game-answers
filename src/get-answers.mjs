@@ -15,6 +15,7 @@ import { getAnswers as pimantle } from './pimantle.mjs';
 import { getAnswer as poeltl } from './poeltl.mjs';
 import { getAnswers as quordle } from './quordle.mjs';
 import { getAnswers as revealed } from './revealed.mjs';
+import { getAnswers as scrandle } from './scrandle.mjs';
 import { getAnswers as searchle } from './searchle.mjs';
 import { getAnswers as semantle_junior} from './semantle-junior.mjs';
 import { getAnswers as shuffalo } from './shuffalo.mjs';
@@ -89,6 +90,9 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
             break;
         case 'revealed':
             await revealed(start_date, amount_to_return).then(r => answers[puzzle] = r);
+            break;
+        case 'scrandle':
+            await scrandle(start_date, amount_to_return).then(r => answers[puzzle] = r);
             break;
         case 'searchle':
             await searchle(start_date, amount_to_return).then(r => answers[puzzle] = r);
