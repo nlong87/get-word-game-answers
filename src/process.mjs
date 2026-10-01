@@ -6,6 +6,7 @@ export const PUZZLE_TYPES = [
     'colordle',
     'connections',
     'contexto',
+    'gamedle',
     'harmonies',
     'jumble',
     'keyword',
@@ -60,6 +61,9 @@ export default async function process_answers(type, amount_to_return, start_date
             break;
         case 'contexto':
             data = await get_answers('contexto', start_date, amount_to_return);
+            break;
+        case 'gamedle':
+            data = await get_answers('gamedle', start_date, amount_to_return);
             break;
         case 'harmonies':
             data = await get_answers('harmonies', start_date, amount_to_return);

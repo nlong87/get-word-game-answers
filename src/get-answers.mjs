@@ -1,6 +1,7 @@
 import { getAnswers as colordle} from './colordle.mjs';
 import { getAnswers as connections} from './connections.mjs';
 import { getAnswers as contexto } from './contexto.mjs';
+import { getAnswers as gamedle } from './gamedle.mjs';
 import { getAnswers as harmonies } from './harmonies.mjs';
 import { getAnswers as jumble } from './jumble.mjs';
 import { getAnswers as keyword } from './keyword.mjs';
@@ -43,6 +44,10 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
             break;
         case 'contexto':
             await contexto(start_date, amount_to_return).then(r => answers[puzzle] = r);
+            break;
+        case 'gamedle':
+            // Six daily modes from one site; merge their keys in, as nyt-bonus does.
+            await gamedle(start_date, amount_to_return).then(r => Object.assign(answers, r));
             break;
         case 'harmonies':
             await harmonies(start_date, amount_to_return).then(r => answers[puzzle] = r);

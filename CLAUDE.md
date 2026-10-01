@@ -148,6 +148,21 @@ names with daily Strands, so both use `formatStrandsAnswer()` exported from `src
 These endpoints were recovered from minified game bundles and are undocumented; they can change
 without notice.
 
+### Gamedle (`src/gamedle.mjs`)
+
+One `gamedle` type produces six keys (cover, artwork, characters, keywords, guess, and the Pink
+Ribbon "Guess the Breast" event), merged like `nyt-bonus`. Each mode is `POST /today<Mode>Game` with
+`{ daynumber }`; `daynumber` is the displayed number and a future day returns `original: null`.
+
+- **Today's game name is hidden** (`label: null`) until the day ends; past days include it. Today's is
+  resolved read-only: collection/franchise ids → names via `/getCollectionAndFranchises`, then
+  `/api/autocomplete?q=<name>` and match on `value`. Don't "play to lose" via `/giveItATry` - that
+  records a game in the site's public stats.
+- **It rate limits bursts** with empty 200 bodies or dropped connections, so requests are spaced
+  2.5 s apart and retried with backoff. A daily run takes ~30 s.
+- The event counts days 1..36 from 2026-09-25 and its key is omitted outside that window.
+- The day resets at midnight UTC-3.
+
 `weaver.mjs` and `weaver-x.mjs` are near-duplicates differing only in anchor date, URL suffix, regex match index, and seed pairs — change them together.
 
 ### Browser / Xvfb in production
