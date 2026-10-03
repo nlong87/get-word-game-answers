@@ -155,9 +155,13 @@ Ribbon "Guess the Breast" event), merged like `nyt-bonus`. Each mode is `POST /t
 `{ daynumber }`; `daynumber` is the displayed number and a future day returns `original: null`.
 
 - **Today's game name is hidden** (`label: null`) until the day ends; past days include it. Today's is
-  resolved read-only: collection/franchise ids → names via `/getCollectionAndFranchises`, then
-  `/api/autocomplete?q=<name>` and match on `value`. Don't "play to lose" via `/giveItATry` - that
-  records a game in the site's public stats.
+  resolved in order: (1) read-only catalog lookup - collection/franchise ids → names via
+  `/getCollectionAndFranchises`, then `/api/autocomplete?q=<name>` and match on `value`; (2) IGDB,
+  since Gamedle's game ids and image ids are IGDB's (needs `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET`);
+  (3) as a last resort, skipping all six attempts via `/giveItATry<Mode>` so the server reveals the
+  name on LOSE. That records a lost game in the site's public stats, so it only runs when 1 and 2
+  fail, and only for cover/artwork/keywords - Guess has no skip. Games with `collection: 0` and no
+  franchises are common and always fall through to IGDB.
 - **It rate limits bursts** with empty 200 bodies or dropped connections, so requests are spaced
   2.5 s apart and retried with backoff. A daily run takes ~30 s.
 - The event counts days 1..36 from 2026-09-25 and its key is omitted outside that window.
@@ -176,6 +180,8 @@ Read from a gitignored `src/.env` via `dotenv/config`:
 - `REST_ENDPOINT`, `REST_USERNAME`, `REST_PASSWORD` — WordPress REST target for `post_data()`.
 - `PROXY_API_KEY` — Bright Data web_unlocker1 token used by `proxyWebsite()`.
 - `DISCORD_WEBHOOK` — optional; failure/short-result alerts. Silently skipped if unset.
+- `IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET` — Twitch app credentials for IGDB, used by `gamedle` to
+  name games its own catalog can't. Without them Gamedle falls back to losing the game.
 - `NODE_ENV` — gates Xvfb, the proxy path, the GET forwarder, and the Cloud Scheduler UA check.
 - `PORT` — defaults to 8080; `npm run dev` sets 8081 locally because the `tryhard-phpmyadmin`
   container occupies 8080.

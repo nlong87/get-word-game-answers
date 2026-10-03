@@ -23,10 +23,10 @@ const Config = {
     // The daily reset is midnight UTC-3 (03:00 UTC); Buenos Aires has no DST.
     tz: 'America/Argentina/Buenos_Aires',
     modes: {
-        'gamedle-cover':      { endpoint: 'todayGame',           number: 1621, type: 'Gamedle Cover' },
-        'gamedle-artwork':    { endpoint: 'todayArtworkGame',    number: 1380, type: 'Gamedle Artwork' },
+        'gamedle-cover':      { endpoint: 'todayGame',           number: 1621, type: 'Gamedle Cover',    attempt: 'giveItATry' },
+        'gamedle-artwork':    { endpoint: 'todayArtworkGame',    number: 1380, type: 'Gamedle Artwork',  attempt: 'giveItATryArtwork' },
         'gamedle-characters': { endpoint: 'todayCharactersGame', number: 473,  type: 'Gamedle Characters', character: true },
-        'gamedle-keywords':   { endpoint: 'todayKeywordsGame',   number: 1181, type: 'Gamedle Keywords' },
+        'gamedle-keywords':   { endpoint: 'todayKeywordsGame',   number: 1181, type: 'Gamedle Keywords', attempt: 'giveItATryKeywords' },
         'gamedle-guess':      { endpoint: 'todayWrittenGame',    number: 1434, type: 'Gamedle Guess' },
         'gamedle-event':      { endpoint: 'todayEventGame',      number: 6,    type: 'Gamedle Guess the Breast', character: true, lastDay: 36 }
     }
@@ -49,7 +49,7 @@ let lastRequestAt = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function request( path, init = {} ) {
+async function request( path, init = {}, allowStatuses = [] ) {
 
     for ( let attempt = 0; ; attempt++ ) {
 
@@ -62,7 +62,7 @@ async function request( path, init = {} ) {
         let text = '';
         try {
             const response = await fetch( base_url + path, { ...init, headers: { ...headers, ...init.headers } } );
-            if ( !response.ok ) {
+            if ( !response.ok && !allowStatuses.includes( response.status ) ) {
                 throw new Error( `HTTP ${response.status}` );
             }
             text = await response.text();
@@ -86,13 +86,13 @@ async function request( path, init = {} ) {
 
 async function getDay( mode, number ) {
 
-    const data = await request( mode.endpoint, {
+    const board = await request( mode.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ daynumber: String(number) })
     });
 
-    return data?.original ?? null;
+    return board?.original ? board : null;
 }
 
 let catalog = null;
@@ -105,11 +105,79 @@ async function getCatalog() {
 }
 
 /*
-Today's game hides its name (`label: null`) until the day is over, but still carries its id plus
-its collection and franchise ids. Name those from the catalog, search the autocomplete for each
-name, and take the result whose id matches. Past days carry the label directly.
+Gamedle's game ids and images are IGDB's, so IGDB can name a game the site's own catalog cannot (a
+game with no collection or franchise). Needs a Twitch app's IGDB_CLIENT_ID / IGDB_CLIENT_SECRET;
+without them this step is skipped.
 */
-async function resolveName( original ) {
+let igdbToken = null;
+
+async function igdbName( id ) {
+
+    const { IGDB_CLIENT_ID: clientId, IGDB_CLIENT_SECRET: clientSecret } = process.env;
+
+    if ( !clientId || !clientSecret ) {
+        return null;
+    }
+
+    if ( !igdbToken || igdbToken.expiresAt < Date.now() ) {
+        const params = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: 'client_credentials' });
+        const response = await fetch( `https://id.twitch.tv/oauth2/token?${params}`, { method: 'POST' } );
+        if ( !response.ok ) {
+            throw new Error( `IGDB token request failed: HTTP ${response.status}` );
+        }
+        const token = await response.json();
+        igdbToken = { value: token.access_token, expiresAt: Date.now() + ( token.expires_in - 60 ) * 1000 };
+    }
+
+    const response = await fetch( 'https://api.igdb.com/v4/games', {
+        method: 'POST',
+        headers: { 'Client-ID': clientId, 'Authorization': `Bearer ${igdbToken.value}` },
+        body: `fields name; where id = ${Number(id)};`
+    });
+
+    if ( !response.ok ) {
+        throw new Error( `IGDB lookup for ${id} failed: HTTP ${response.status}` );
+    }
+
+    const [game] = await response.json();
+    return game?.name ?? null;
+}
+
+/*
+Last resort: skip all six attempts so the server ends the game and reveals the name, as it does for
+a player who loses. This records a lost game in the site's public stats, so it only runs when every
+read-only route has failed. Each miss answers 418 with the updated board; 417 means the daily game
+rolled over mid-run.
+*/
+const MAX_ATTEMPTS = 6;
+
+async function loseToReveal( mode, board ) {
+
+    let current = board;
+
+    while ( current.gameStatus === 'IN_PROGRESS' && ( current.attemps ?? [] ).length < MAX_ATTEMPTS ) {
+        const next = structuredClone( current );
+        next.attemps = [ ...( next.attemps ?? [] ), { value: -1, label: 'Skipped', collection: 0, franchises: [] } ];
+
+        current = await request( mode.attempt, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify( next )
+        }, [418] );
+    }
+
+    return current.gameStatus === 'LOSE' ? current.original?.label ?? null : null;
+}
+
+/*
+Today's game hides its name (`label: null`) until the day is over, but still carries its id plus
+its collection and franchise ids. Try, in order: the catalog (name the collection/franchise, search
+the autocomplete for each, match on id), IGDB, and finally losing the game. Past days carry the
+label directly.
+*/
+async function resolveName( mode, board ) {
+
+    const original = board.original;
 
     if ( original.label ) {
         return original.label;
@@ -131,16 +199,37 @@ async function resolveName( original ) {
         }
     }
 
-    throw new Error( `unresolved game id ${original.value} (searched: ${names.join(', ') || 'nothing'})` );
-}
+    const tried = [ `catalog (${names.join(', ') || 'no collection or franchise'})` ];
 
-async function formatAnswer( mode, original ) {
-
-    if ( mode.character ) {
-        return ( original.colfranStrings ?? [] ).join(', ') + ' |~~~~| ' + original.label;
+    try {
+        const name = await igdbName( original.value );
+        if ( name ) {
+            return name;
+        }
+        tried.push( process.env.IGDB_CLIENT_ID ? 'IGDB (not found)' : 'IGDB (no credentials)' );
+    } catch ( error ) {
+        tried.push( `IGDB (${error.message})` );
     }
 
-    return await resolveName( original );
+    if ( mode.attempt ) {
+        console.warn( `  ${mode.type}: losing today's game to reveal game id ${original.value}` );
+        const name = await loseToReveal( mode, board );
+        if ( name ) {
+            return name;
+        }
+        tried.push( 'losing the game (no name revealed)' );
+    }
+
+    throw new Error( `unresolved game id ${original.value} - tried ${tried.join(', ')}` );
+}
+
+async function formatAnswer( mode, board ) {
+
+    if ( mode.character ) {
+        return ( board.original.colfranStrings ?? [] ).join(', ') + ' |~~~~| ' + board.original.label;
+    }
+
+    return await resolveName( mode, board );
 }
 
 export async function getAnswers( date_string, number_to_get ) {
@@ -177,8 +266,8 @@ export async function getAnswers( date_string, number_to_get ) {
             if ( mode.lastDay && number > mode.lastDay ) {
                 return null;
             }
-            const original = await getDay( mode, number );
-            return original ? await formatAnswer( mode, original ) : null;
+            const board = await getDay( mode, number );
+            return board ? await formatAnswer( mode, board ) : null;
         }, key );
 
         const result = {
