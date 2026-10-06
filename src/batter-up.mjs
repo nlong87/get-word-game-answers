@@ -1,8 +1,8 @@
 import fetch from "node-fetch";
 import {
-    convertDateForSQL,
     getCurrentDayInTimezone,
-    getSpecificDay
+    getSpecificDay,
+    scheduleForSite
 } from "./helpers.mjs";
 
 /*
@@ -17,9 +17,11 @@ PHP plugin numbered one higher (days + 1), so its "Batter Up 927" is the site's 
 const Config = {
     number: 1,
     date: getSpecificDay('2024-02-19'),
+    // Wall-clock time in tz on the puzzle's own date; see scheduleForSite().
     schedule: {
-        h: 21,
-        m: 5
+        h: 0,
+        m: 5,
+        tz: 'America/New_York'
     },
     tz: 'America/New_York'
 }
@@ -92,7 +94,7 @@ export async function getAnswers( date_string, number_to_get ) {
     }
 
     const published = date.toString();
-    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+    const scheduled = scheduleForSite( date, Config.schedule );
     const diff = date.since(Config.date).days;
     let puzzleNumber = Config.number + diff;
 

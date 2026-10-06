@@ -18,6 +18,27 @@ export function convertDateForSQL( date, hours, minutes ) {
     return `${date_string} ${h}:${i}:00`;
 }
 
+// WordPress's timezone_string. scheduledDate is read as wall-clock time in this zone.
+export const SITE_TZ = 'America/Phoenix';
+
+/**
+ * scheduledDate for a game that goes live at local time in a zone with DST.
+ *
+ * convertDateForSQL writes a fixed site-zone time, which only lines up with such a game for half
+ * the year. This takes the time in the game's own zone instead and converts it per date.
+ *
+ * @param {Temporal.PlainDate} date - The puzzle date; the time is on this day in `schedule.tz`.
+ * @param {{h: number, m: number, tz: string}} schedule - Wall-clock time and the zone it is in.
+ * @returns {string} 'YYYY-MM-DD HH:MM:SS' in SITE_TZ.
+ */
+export function scheduleForSite( date, schedule ) {
+    const site = date
+        .toZonedDateTime({ timeZone: schedule.tz, plainTime: { hour: schedule.h, minute: schedule.m } })
+        .withTimeZone( SITE_TZ );
+
+    return convertDateForSQL( site.toPlainDate(), site.hour, site.minute );
+}
+
 export async function proxyWebsite( fetch_url ) {
     
     const api_key = process.env.PROXY_API_KEY;

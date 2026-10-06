@@ -1,16 +1,18 @@
 import fetch from "node-fetch";
 import {
-    convertDateForSQL,
     getCurrentDayInTimezone,
-    getSpecificDay
+    getSpecificDay,
+    scheduleForSite
 } from "./helpers.mjs";
 
 const Config = {
     number: 1,
     date: getSpecificDay('2023-09-25'),
+    // Wall-clock time in tz on the puzzle's own date; see scheduleForSite().
     schedule: {
         h: 0,
-        m: 0
+        m: 0,
+        tz: 'America/Los_Angeles'
     },
     tz: 'America/Los_Angeles'
 }
@@ -100,7 +102,7 @@ export async function getAnswers( date_string, number_to_get ) {
     }
     
     const published = date.toString();
-    const scheduled = convertDateForSQL(date, Config.schedule.h, Config.schedule.m);
+    const scheduled = scheduleForSite( date, Config.schedule );
     const diff = date.since(Config.date).days;
     const puzzleNumber = Config.number + diff;
     

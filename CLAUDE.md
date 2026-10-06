@@ -49,10 +49,30 @@ route's status code is a retry signal:
   safely idempotent, so these must not be retried.
 
 Retries themselves are Cloud Scheduler's job, configured per job rather than in code: the
-`Parseword` job runs `--max-retry-attempts=3 --min-backoff=20m --max-backoff=20m` (see
-`npm run scheduler:parseword-retries`), giving attempts at roughly +0, +20, +40 and +60 minutes.
+`Parseword`, `Scrandle` and `Batter-Up` jobs run `--max-retry-attempts=3 --min-backoff=20m
+--max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`), giving attempts at
+roughly +0, +20, +40 and +60 minutes.
 Every other job still has `retryCount: 0`, so a 503 there is just a failed execution in the
 scheduler's logs. Each failed attempt also sends its own Discord alert.
+
+### Timezones and DST
+
+Two clocks are involved, and DST affects each one differently:
+
+- **When a job runs** comes from Cloud Scheduler. A daily job decides "today" with
+  `getCurrentDayInTimezone(Config.tz)`, so when a game resets at local midnight in a zone that
+  observes DST, the job sets `--time-zone` to that zone and uses a local cron. A UTC cron that lands
+  just after midnight in summer lands an hour *before* it in winter, and then reposts the previous
+  day. Batter-Up, Scrandle, Keyword, On-The-Record, Revealed and Parseword do this; the timezone
+  changes for all but Batter-Up are in `npm run scheduler:dst`. Avoid 01:00-03:00 local, which DST
+  skips or repeats. Poeltl instead takes "today" from the `day` field of its `/api/sync` response.
+- **When a post goes live** is `scheduledDate`, read as wall-clock time in WordPress's zone,
+  `America/Phoenix` (`SITE_TZ` in `helpers.mjs`), which has no DST. `convertDateForSQL` writes a fixed
+  Phoenix time, which is fine for games on UTC or a fixed offset. A game that goes live at local time
+  in a DST zone gives `Config.schedule` a `tz` and uses `scheduleForSite(date, Config.schedule)`,
+  which converts per date (jumble, weaver, weaver-x, keyword, on-the-record, batter-up). A multi-day
+  batch still carries a single `scheduledDate`, so in the week that straddles a change, the later
+  answers WordPress extrapolates are off by an hour.
 
 ### Puzzle module contract
 
@@ -109,7 +129,7 @@ shows `#` + `game_number` from its payload (days since 2024-02-18), and `src/bat
 number. The PHP plugin it replaced numbered one higher, so its older WordPress posts run +1 from the
 site. `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
 
-Dates use the Temporal polyfill via `src/helpers.mjs` (`getCurrentDayInTimezone`, `getSpecificDay`, `convertDateForSQL`) — not `Date`. `moment` is still a dependency but only appears in a comment.
+Dates use the Temporal polyfill via `src/helpers.mjs` (`getCurrentDayInTimezone`, `getSpecificDay`, `convertDateForSQL`, `scheduleForSite`) — not `Date`. `moment` is still a dependency but only appears in a comment.
 
 ### Answer-string delimiters
 
@@ -200,4 +220,6 @@ Read from a gitignored `src/.env` via `dotenv/config`:
 3. Check the puzzle number against what the site *displays*, not an `id` field in the payload.
 4. If the puzzle isn't a consecutive daily integer sequence, populate `answerSchedule` (and
    `clamped` when the source caps how far ahead it publishes) — see the module contract above.
-5. Confirm the returned `type` string matches what the WordPress side expects — it is the display name, and casing has been a source of bugs (see git history for `weaver-x`).
+5. If the game resets in a zone with DST, give its Cloud Scheduler job that `--time-zone` and use
+   `scheduleForSite` for its `scheduledDate` — see "Timezones and DST".
+6. Confirm the returned `type` string matches what the WordPress side expects — it is the display name, and casing has been a source of bugs (see git history for `weaver-x`).

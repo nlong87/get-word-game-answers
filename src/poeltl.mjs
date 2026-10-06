@@ -68,6 +68,7 @@ async function getAnswerFromSite( date = '') {
     
     const fetch_url = (date) ? `https://poeltl.nbpa.com/historic/${date}` : "https://poeltl.nbpa.com/api/sync";
     let answer = false;
+    let day = null;
     
     const initialRequest = await fetch(fetch_url, {
         "headers": headers,
@@ -81,6 +82,9 @@ async function getAnswerFromSite( date = '') {
         // Add referrer if date is provided.
         if ( date ) {
             headers['Referer'] = fetch_url;
+        } else {
+            // The game's own "today", so the label matches the player whatever zone it resets in.
+            day = await initialRequest.json().then( sync => sync?.day ?? null ).catch( () => null );
         }
         
         let response;
@@ -94,7 +98,7 @@ async function getAnswerFromSite( date = '') {
         }
     }
     
-    return answer;
+    return { answer, day };
 }
 
 export async function getAnswer(date_string = '') {
@@ -108,10 +112,10 @@ export async function getAnswer(date_string = '') {
     
     const latestDate = getCurrentDayInTimezone(Config.tz);
     
-    const published = date.toString();
-    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+    let published = date.toString();
+    let scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
     const diff = date.since(Config.date).days;
-    const puzzleNumber = Config.number + diff;
+    let puzzleNumber = Config.number + diff;
     
     const isCurrent = (latestDate.toString() === date.toString() );
     
@@ -119,8 +123,16 @@ export async function getAnswer(date_string = '') {
     let answer = null;
     
     let date_param = (isCurrent) ? '' : date.toString();
-    await getAnswerFromSite(date_param).then(r => answer = r);
+    const result = await getAnswerFromSite(date_param);
+    answer = result.answer;
     if (!answer) return false;
+    
+    if ( isCurrent && result.day && result.day !== published ) {
+        date = getSpecificDay( result.day );
+        published = date.toString();
+        scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
+        puzzleNumber = Config.number + date.since(Config.date).days;
+    }
     
     answers.push(answer);
     
