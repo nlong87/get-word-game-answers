@@ -19,7 +19,7 @@ npm run dev
 curl 'http://localhost:8081/post_answers?type=wordle&amount=8'
 ```
 
-In non-production the `/post_answers` route also accepts GET (see the dev-only forwarder in `src/index.js`), which makes browser testing easy. Be aware the handler **posts to the live WordPress endpoint** — to only exercise scraping, import `process_answers` from `src/index.js` and call it directly, or run the module's `getAnswers()` in a scratch script.
+In non-production the `/post_answers` route also accepts GET (see the dev-only forwarder in `src/index.js`), which makes browser testing easy. Be aware the handler **posts to the live WordPress endpoint** — to only exercise scraping, import `process_answers` from `src/process.mjs` and call it directly, or run the module's `getAnswers()` in a scratch script.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Request flow:
 
 ```
 POST /post_answers?type=<puzzle>&amount=<n>   (src/index.js)
-  -> process_answers()   switch on puzzle type
+  -> process_answers()   (src/process.mjs) switch on puzzle type
   -> get_answers()       (src/get-answers.mjs) switch again, dispatch to the module
   -> <puzzle>.mjs        getAnswers(date_string, number_to_get)
   -> post_data()         WPAPI POST; Discord webhook alert on short/empty results
@@ -104,7 +104,10 @@ anchoring a `Config`. `src/strands.mjs` anchors at the 2024-03-04 launch as `num
 the relationship obvious. NYT bonus puzzles display no number at all, so `src/nyt-bonus.mjs`
 numbers them by weekly drop from the first drop on 2026-08-26. Scrandle displays no number either
 (its share text is the date), so `src/scrandle.mjs` counts days from 2025-04-01, the earliest day
-its `/history` endpoint serves; it only ever publishes today, hence `clamped: true`. `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
+its `/history` endpoint serves; it only ever publishes today, hence `clamped: true`. Batter Up
+shows `#` + `game_number` from its payload (days since 2024-02-18), and `src/batter-up.mjs` posts that
+number. The PHP plugin it replaced numbered one higher, so its older WordPress posts run +1 from the
+site. `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
 
 Dates use the Temporal polyfill via `src/helpers.mjs` (`getCurrentDayInTimezone`, `getSpecificDay`, `convertDateForSQL`) — not `Date`. `moment` is still a dependency but only appears in a comment.
 
@@ -120,6 +123,10 @@ Preserve the exact spacing.
 ### How modules get their data (five strategies)
 
 1. **Public JSON API** — most common (`wordle`, `connections`, `nerdle`, `contexto`, `jumble`, …) via `node-fetch`.
+   `batter-up` is a variant: its CloudFront host is regexed out of the site's `assets/index-<hash>.js`
+   (falling back to the known host), then `games_batterup{date}.json` lists every game through that
+   date. A file that isn't up yet (it lands the evening before) or has expired returns 403, so backfills
+   fall back to today's file.
 2. **Headless browser** — `letroso`, `searchle` use `launchBrowser()` from `src/browser.mjs`. These typically load the site, find the hashed `main.<hash>.js` bundle, and regex the answer array out of it; some `eval`/`Function` the matched literal.
 3. **Bright Data proxy** — `parseword`, `revealed` call `proxyWebsite(url)` from `helpers.mjs` **only when `NODE_ENV === 'production'`**, and fetch directly in development. Note `proxyWebsite` returns raw text and no status code, so a proxied module has to parse (and validate) the body itself — `parseword` does this in `getAnswerJson`, which returns parsed JSON or `null` in both environments; a day that isn't published yet answers 403 with the body `Forbidden`.
 4. **Weekly index discovery** — `nyt-bonus` only. See below.
@@ -189,7 +196,7 @@ Read from a gitignored `src/.env` via `dotenv/config`:
 ## Adding a new puzzle
 
 1. Create `src/<puzzle>.mjs` following the `Config` + `getAnswers()` contract above.
-2. Add a `case` in `src/get-answers.mjs` and a matching `case` in `process_answers()` in `src/index.js`.
+2. Add a `case` in `src/get-answers.mjs` and a matching `case` (and a `PUZZLE_TYPES` entry) in `src/process.mjs`.
 3. Check the puzzle number against what the site *displays*, not an `id` field in the payload.
 4. If the puzzle isn't a consecutive daily integer sequence, populate `answerSchedule` (and
    `clamped` when the source caps how far ahead it publishes) — see the module contract above.

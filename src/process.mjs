@@ -3,6 +3,7 @@ import {get_answers} from "./get-answers.mjs";
 // Every type the switch below accepts. Kept here so tooling (src/cli.mjs) can validate input and
 // print the list without duplicating it; add new puzzles to both.
 export const PUZZLE_TYPES = [
+    'batter-up',
     'colordle',
     'connections',
     'contexto',
@@ -53,6 +54,9 @@ export default async function process_answers(type, amount_to_return, start_date
     
     switch (type) {
         
+        case 'batter-up':
+            data = await get_answers('batter-up', start_date, amount_to_return);
+            break;
         case 'colordle':
             data = await get_answers('colordle', start_date, amount_to_return);
             break;

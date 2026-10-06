@@ -11,6 +11,7 @@
     "scheduler:parseword-retries": "gcloud scheduler jobs update http Parseword --project tryhard-word-games --location us-west1 --max-retry-attempts=3 --min-backoff=20m --max-backoff=20m",
     "answers": "node src/cli.mjs parseword --amount 1 --post --yes",
     "answers:post": "node src/cli.mjs --post",
+    "answers:batter-up": "node src/cli.mjs batter-up --amount 1 --json",
     "answers:colordle": "node src/cli.mjs colordle",
     "answers:connections": "node src/cli.mjs connections",
     "answers:contexto": "node src/cli.mjs contexto",

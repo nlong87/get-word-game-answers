@@ -1,3 +1,4 @@
+import { getAnswers as batterUp } from './batter-up.mjs';
 import { getAnswers as colordle} from './colordle.mjs';
 import { getAnswers as connections} from './connections.mjs';
 import { getAnswers as contexto } from './contexto.mjs';
@@ -36,6 +37,9 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
     
     switch (puzzle) {
         
+        case 'batter-up':
+            await batterUp(start_date, amount_to_return).then(r => answers[puzzle] = r);
+            break;
         case 'colordle':
             await colordle(start_date, amount_to_return).then(r => answers[puzzle] = r);
             break;
