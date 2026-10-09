@@ -150,7 +150,10 @@ Preserve the exact spacing.
 2. **Headless browser** — `letroso`, `searchle` use `launchBrowser()` from `src/browser.mjs`. These typically load the site, find the hashed `main.<hash>.js` bundle, and regex the answer array out of it; some `eval`/`Function` the matched literal.
 3. **Bright Data proxy** — `parseword`, `revealed` call `proxyWebsite(url)` from `helpers.mjs` **only when `NODE_ENV === 'production'`**, and fetch directly in development. Note `proxyWebsite` returns raw text and no status code, so a proxied module has to parse (and validate) the body itself — `parseword` does this in `getAnswerJson`, which returns parsed JSON or `null` in both environments; a day that isn't published yet answers 403 with the body `Forbidden`.
 4. **Weekly index discovery** — `nyt-bonus` only. See below.
-5. **Bundled static data** — files prefixed `_` are data or vendored site logic, not scrapers: `_phrazle-answers.mjs`, `_quordle-answers.mjs`, `_semantle-child-words.mjs`, `_colordle-functions.js`. Phrazle/Quordle index into these lists by day offset (Phrazle wraps around the list when it runs off the end).
+5. **Bundled static data** — files prefixed `_` are data or vendored site logic, not scrapers: `_phrazle-answers.mjs`, `_quordle-answers.mjs`, `_semantle-child-words.mjs`, `_colordle-functions.js`. Phrazle indexes into its list by day offset (wrapping around when it runs off the end).
+   `_quordle-answers.mjs` holds only the site's seeded pick; `quordle.mjs` reads the word bank and
+   blacklist from the live `assets/index-<hash>.js` bundle each run, since Merriam-Webster edits them
+   (a 2026-10 blacklist change altered #1719), and throws if it can't, rather than guess.
 
 ### NYT bonus puzzles (`src/nyt-bonus.mjs`)
 

@@ -95,7 +95,7 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
             await poeltl( start_date ).then( r => answers[puzzle] = r );
             break;
         case 'quordle':
-            answers['quordle'] = quordle( start_date, amount_to_return);
+            await quordle( start_date, amount_to_return ).then( r => answers[puzzle] = r );
             break;
         case 'revealed':
             await revealed(start_date, amount_to_return).then(r => answers[puzzle] = r);
