@@ -95,7 +95,9 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
             await poeltl( start_date ).then( r => answers[puzzle] = r );
             break;
         case 'quordle':
-            await quordle( start_date, amount_to_return ).then( r => answers[puzzle] = r );
+            await quordle(start_date, amount_to_return).then( r => answers['quordle'] = r );
+            await quordle(start_date, amount_to_return, 'chill').then( r => answers['quordle-chill'] = r );
+            await quordle(start_date, amount_to_return, 'extreme').then( r => answers['quordle-extreme'] = r );
             break;
         case 'revealed':
             await revealed(start_date, amount_to_return).then(r => answers[puzzle] = r);

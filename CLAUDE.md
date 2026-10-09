@@ -35,7 +35,7 @@ POST /post_answers?type=<puzzle>&amount=<n>   (src/index.js)
   -> post_data()         WPAPI POST; Discord webhook alert on short/empty results
 ```
 
-The two switch statements are redundant but both must be updated to add a puzzle. `get-answers.mjs` is also where a single type fans out to multiple result keys (e.g. `nerdle` produces `nerdle`, `nerdle-mini`, `nerdle-micro`, `nerdle-maxi`) or where the key is renamed.
+The two switch statements are redundant but both must be updated to add a puzzle. `get-answers.mjs` is also where a single type fans out to multiple result keys (e.g. `nerdle` produces `nerdle`, `nerdle-mini`, `nerdle-micro`, `nerdle-maxi`, and `quordle` produces `quordle`, `quordle-chill`, `quordle-extreme`) or where the key is renamed.
 
 ### Response status and retries
 
@@ -151,9 +151,11 @@ Preserve the exact spacing.
 3. **Bright Data proxy** — `parseword`, `revealed` call `proxyWebsite(url)` from `helpers.mjs` **only when `NODE_ENV === 'production'`**, and fetch directly in development. Note `proxyWebsite` returns raw text and no status code, so a proxied module has to parse (and validate) the body itself — `parseword` does this in `getAnswerJson`, which returns parsed JSON or `null` in both environments; a day that isn't published yet answers 403 with the body `Forbidden`.
 4. **Weekly index discovery** — `nyt-bonus` only. See below.
 5. **Bundled static data** — files prefixed `_` are data or vendored site logic, not scrapers: `_phrazle-answers.mjs`, `_quordle-answers.mjs`, `_semantle-child-words.mjs`, `_colordle-functions.js`. Phrazle indexes into its list by day offset (wrapping around when it runs off the end).
-   `_quordle-answers.mjs` holds only the site's seeded pick; `quordle.mjs` reads the word bank and
-   blacklist from the live `assets/index-<hash>.js` bundle each run, since Merriam-Webster edits them
-   (a 2026-10 blacklist change altered #1719), and throws if it can't, rather than guess.
+   `_quordle-answers.mjs` holds only the site's seeded pick; `quordle.mjs` reads the word banks
+   (Classic, Chill, Extreme) and the shared blacklist from the live `assets/index-<hash>.js` bundle
+   each run, since Merriam-Webster edits them (a 2026-10 blacklist change altered #1719), and throws
+   if it can't, rather than guess. Chill and Extreme number by days since 2024-07-29, so they share a
+   number each day but not words.
 
 ### NYT bonus puzzles (`src/nyt-bonus.mjs`)
 
