@@ -49,8 +49,9 @@ route's status code is a retry signal:
   safely idempotent, so these must not be retried.
 
 Retries themselves are Cloud Scheduler's job, configured per job rather than in code: the
-`Parseword`, `Scrandle` and `Batter-Up` jobs run `--max-retry-attempts=3 --min-backoff=20m
---max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`), giving attempts at
+`Parseword`, `Scrandle`, `Batter-Up` and `LinkedIn` jobs run `--max-retry-attempts=3 --min-backoff=20m
+--max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`; LinkedIn's job is
+created whole by `npm run scheduler:linkedin`), giving attempts at
 roughly +0, +20, +40 and +60 minutes.
 Every other job still has `retryCount: 0`, so a 503 there is just a failed execution in the
 scheduler's logs. Each failed attempt also sends its own Discord alert.
@@ -63,14 +64,14 @@ Two clocks are involved, and DST affects each one differently:
   `getCurrentDayInTimezone(Config.tz)`, so when a game resets at local midnight in a zone that
   observes DST, the job sets `--time-zone` to that zone and uses a local cron. A UTC cron that lands
   just after midnight in summer lands an hour *before* it in winter, and then reposts the previous
-  day. Batter-Up, Scrandle, Keyword, On-The-Record, Revealed and Parseword do this; the timezone
-  changes for all but Batter-Up are in `npm run scheduler:dst`. Avoid 01:00-03:00 local, which DST
+  day. Batter-Up, Scrandle, Keyword, On-The-Record, Revealed, Parseword and LinkedIn do this; the
+  timezone changes for all but Batter-Up and LinkedIn are in `npm run scheduler:dst`. Avoid 01:00-03:00 local, which DST
   skips or repeats. Poeltl instead takes "today" from the `day` field of its `/api/sync` response.
 - **When a post goes live** is `scheduledDate`, read as wall-clock time in WordPress's zone,
   `America/Phoenix` (`SITE_TZ` in `helpers.mjs`), which has no DST. `convertDateForSQL` writes a fixed
   Phoenix time, which is fine for games on UTC or a fixed offset. A game that goes live at local time
   in a DST zone gives `Config.schedule` a `tz` and uses `scheduleForSite(date, Config.schedule)`,
-  which converts per date (jumble, weaver, weaver-x, keyword, on-the-record, batter-up). A multi-day
+  which converts per date (jumble, weaver, weaver-x, keyword, on-the-record, batter-up, linkedin). A multi-day
   batch still carries a single `scheduledDate`, so in the week that straddles a change, the later
   answers WordPress extrapolates are off by an hour.
 
@@ -147,6 +148,8 @@ Preserve the exact spacing.
    (falling back to the known host), then `games_batterup{date}.json` lists every game through that
    date. A file that isn't up yet (it lands the evening before) or has expired returns 403, so backfills
    fall back to today's file.
+   `linkedin` is another: an anonymous guest session against two undocumented LinkedIn endpoints.
+   See below.
 2. **Headless browser** — `letroso`, `searchle` use `launchBrowser()` from `src/browser.mjs`. These typically load the site, find the hashed `main.<hash>.js` bundle, and regex the answer array out of it; some `eval`/`Function` the matched literal.
 3. **Bright Data proxy** — `parseword`, `revealed` call `proxyWebsite(url)` from `helpers.mjs` **only when `NODE_ENV === 'production'`**, and fetch directly in development. Note `proxyWebsite` returns raw text and no status code, so a proxied module has to parse (and validate) the body itself — `parseword` does this in `getAnswerJson`, which returns parsed JSON or `null` in both environments; a day that isn't published yet answers 403 with the body `Forbidden`.
 4. **Weekly index discovery** — `nyt-bonus` only. See below.
@@ -198,6 +201,34 @@ Ribbon "Guess the Breast" event), merged like `nyt-bonus`. Each mode is `POST /t
   2.5 s apart and retried with backoff. A daily run takes ~30 s.
 - The event counts days 1..36 from 2026-09-25 and its key is omitted outside that window.
 - The day resets at midnight UTC-3.
+
+### LinkedIn (`src/linkedin.mjs`)
+
+One `linkedin` type produces eight keys (`linkedin-pinpoint`, `-crossclimb`, `-queens`, `-tango`,
+`-zip`, `-mini-sudoku`, `-patches`, `-wend`), merged like `nyt-bonus`. Each answer is a structured
+object, not a delimited string. The WordPress side has no renderer for them yet.
+
+- **Logged-out guests get the full solution, but only for today.** Neither endpoint takes a puzzle
+  id or date, so there is no backfill (any other date returns empty answers) and every key is
+  `clamped`. The day resets at midnight Pacific, so the job runs at 00:10 `America/Los_Angeles`.
+- **Session**: a plain `GET /games/queens/` sets `JSESSIONID` and friends. Every request sends the
+  cookies back with `JSESSIONID` (unquoted) as `csrf-token`. No member account is involved; keep it
+  that way, since playing on an account records the game.
+- **Six games** come from the old voyager app: `GET /voyager/api/graphql?variables=(gameTypeId:N)
+  &queryId=voyagerIdentityDashGames.<hash>`, reading the `.Game` entity in `included[]`. gameTypeIds:
+  1 Pinpoint, 2 Crossclimb, 3 Queens, 5 Tango, 6 Zip, 7 Mini Sudoku.
+- **Wend (4) and Patches (8)** are newer than that schema, so their puzzle union comes back empty
+  there. They're read from the new app's router instead: `POST
+  /flagship-web/games/<slug>/?skipStartScreen=true` with a `NavigateToScreen` body. That returns an
+  RSC stream, and the puzzle JSON is cut out of it by brace-matching. The server answers an empty 200
+  without the `x-li-anchor-page-key` and `x-li-initial-url` headers.
+- The payload's `puzzleId` is the displayed "No." (checked for all eight on 2026-10-15). A served
+  number that isn't today's expected one is refused, so a run before the reset never posts
+  yesterday's puzzle.
+- Tango's ZERO is the sun and ONE the moon. Pinpoint's `solutions[0]` is the category; the rest of
+  that list is accepted variants and typos.
+- The queryId hash, the RSC request shape and the app version (read from the page's `data-track`)
+  were all lifted from the live site and are undocumented. Breakage surfaces as per-key alerts.
 
 `weaver.mjs` and `weaver-x.mjs` are near-duplicates differing only in anchor date, URL suffix, regex match index, and seed pairs — change them together.
 

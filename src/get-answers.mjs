@@ -7,6 +7,7 @@ import { getAnswers as harmonies } from './harmonies.mjs';
 import { getAnswers as jumble } from './jumble.mjs';
 import { getAnswers as keyword } from './keyword.mjs';
 import { getAnswers as letroso } from './letroso.mjs';
+import { getAnswers as linkedin } from './linkedin.mjs';
 import { getAnswer as marveldle } from './marveldle.mjs';
 import { getAnswers as nerdle } from './nerdle.mjs';
 import { getAnswers as nytBonus } from './nyt-bonus.mjs';
@@ -64,6 +65,10 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
             break;
         case 'letroso':
             await letroso(start_date, amount_to_return).then(r => answers[puzzle] = r);
+            break;
+        case 'linkedin':
+            // Eight LinkedIn games from one guest session; merge their keys in, as nyt-bonus does.
+            await linkedin(start_date, amount_to_return).then(r => Object.assign(answers, r));
             break;
         case 'marveldle':
             await marveldle().then(r => answers[puzzle] = r);

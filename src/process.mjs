@@ -12,6 +12,7 @@ export const PUZZLE_TYPES = [
     'jumble',
     'keyword',
     'letroso',
+    'linkedin',
     'marveldle',
     'nerdle',
     'nyt-bonus',
@@ -80,6 +81,9 @@ export default async function process_answers(type, amount_to_return, start_date
             break;
         case 'letroso':
             data = await get_answers('letroso', start_date, amount_to_return);
+            break;
+        case 'linkedin':
+            data = await get_answers('linkedin', start_date, amount_to_return);
             break;
         case 'marveldle':
             data = await get_answers('marveldle', start_date, amount_to_return);
