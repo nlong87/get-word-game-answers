@@ -54,6 +54,13 @@ export async function getAnswers( date_string, number_to_get ) {
     while( i < number_to_get ) {
         
         let puzzle = await getAnswer( date.add({days: i}).toString() );
+
+        // NYT hasn't published this far ahead yet (it 404s with status ERROR), so stop rather than
+        // posting empty ' |~~~~| ' placeholders. The short result then trips the usual alert.
+        if ( !puzzle || puzzle.status !== 'OK' ) {
+            break;
+        }
+
         let answer = [];
         let extra = [];
         
