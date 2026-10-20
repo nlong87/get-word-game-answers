@@ -43,7 +43,12 @@ export const DISABLED_PUZZLES = {
     'letroso': 'captured daily by the Chrome extension in extension/letroso (see letroso-host.mjs)'
 };
 
-export default async function process_answers(type, amount_to_return, start_date = null) {
+/*
+`only` lists the result keys to keep. gamedle and linkedin skip fetching the rest (see get_answers);
+for any other type the result is trimmed afterwards, so a narrowed caller never posts more than it
+asked for.
+*/
+export default async function process_answers(type, amount_to_return, start_date = null, only = null) {
     
     let data = [];
     
@@ -68,7 +73,7 @@ export default async function process_answers(type, amount_to_return, start_date
             data = await get_answers('contexto', start_date, amount_to_return);
             break;
         case 'gamedle':
-            data = await get_answers('gamedle', start_date, amount_to_return);
+            data = await get_answers('gamedle', start_date, amount_to_return, only);
             break;
         case 'harmonies':
             data = await get_answers('harmonies', start_date, amount_to_return);
@@ -83,7 +88,7 @@ export default async function process_answers(type, amount_to_return, start_date
             data = await get_answers('letroso', start_date, amount_to_return);
             break;
         case 'linkedin':
-            data = await get_answers('linkedin', start_date, amount_to_return);
+            data = await get_answers('linkedin', start_date, amount_to_return, only);
             break;
         case 'marveldle':
             data = await get_answers('marveldle', start_date, amount_to_return);
@@ -145,5 +150,17 @@ export default async function process_answers(type, amount_to_return, start_date
         
     }
     
-    return data;
+    return only ? keepKeys(data, only) : data;
+}
+
+// Keeps only the listed keys. Errors are non-enumerable, so they are carried over by hand.
+function keepKeys(data, only) {
+    
+    const kept = Object.fromEntries(Object.entries(data ?? {}).filter(([key]) => only.includes(key)));
+    
+    if (data?.errors?.length) {
+        Object.defineProperty(kept, 'errors', { value: data.errors, enumerable: false, configurable: true });
+    }
+    
+    return kept;
 }

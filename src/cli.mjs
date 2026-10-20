@@ -20,7 +20,8 @@ function usage( message ) {
     --post              POST the result to REST_ENDPOINT instead of just printing it
     --json              print the raw result object instead of a summary
     --only KEY[,KEY]    keep only these result keys (e.g. gamedle-event) - for re-posting one
-                        mode of a fan-out type without duplicating the others
+                        mode of a fan-out type without duplicating the others. gamedle and
+                        linkedin fetch only those modes; other types fetch all, then trim
 
   Types:
 ${PUZZLE_TYPES.map( t => `    ${t}` ).join('\n')}
@@ -209,7 +210,7 @@ if ( flags.post ) {
     // Imported here rather than at the top so a dry run never pulls in express, WPAPI or puppeteer.
     const { post_data } = await import( './index.js' );
     
-    const data = selectKeys( await process_answers( type, flags.amount, flags.date ), flags.only );
+    const data = selectKeys( await process_answers( type, flags.amount, flags.date, flags.only ), flags.only );
     const errors = collectErrors( data );
     
     printSummary( data );
@@ -230,7 +231,7 @@ if ( flags.post ) {
     
 } else {
     
-    const data = selectKeys( await process_answers( type, flags.amount, flags.date ), flags.only );
+    const data = selectKeys( await process_answers( type, flags.amount, flags.date, flags.only ), flags.only );
     
     if ( flags.json ) {
         console.log( JSON.stringify( data, null, 2 ) );

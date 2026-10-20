@@ -165,22 +165,28 @@ app.post('/post_answers', async (req, res) => {
     
     const puzzle_type = req.query.type || req.body.type;
     const amount = req.query.amount || req.body.amount;
-    
+
+    // ?only=gamedle-event narrows a fan-out type to the listed keys. Each Gamedle mode has its own
+    // scheduler job this way, so a 503 retries that one mode without re-posting the others.
+    const only_param = req.query.only || req.body.only;
+    const only = only_param ? String(only_param).split(',').map(key => key.trim()).filter(Boolean) : null;
+    const label = only ? `${puzzle_type} [${only.join(', ')}]` : puzzle_type;
+
     // Cloud Run kills the instance at --timeout 300, and nothing in-process can report after
     // that, so warn just before the axe falls.
     const watchdog = setTimeout(() => {
-        send_discord_message(`Posting Answers for ${puzzle_type} has run ${Math.round(WATCHDOG_MS / 1000)}s and is about to hit the Cloud Run timeout.`);
+        send_discord_message(`Posting Answers for ${label} has run ${Math.round(WATCHDOG_MS / 1000)}s and is about to hit the Cloud Run timeout.`);
     }, WATCHDOG_MS);
-    
+
     let answer_data;
     try {
-        answer_data = await process_answers(puzzle_type, amount);
+        answer_data = await process_answers(puzzle_type, amount, null, only);
     } catch (error) {
         clearTimeout(watchdog);
         // Express 4 does not catch async rejections, so without this the process exits and
         // nothing is posted at all.
-        console.error(`Unhandled failure processing ${puzzle_type}:`, error);
-        await send_discord_message(`Posting Answers for ${puzzle_type} threw: ${error.message} - nothing was posted, answering 503 so the scheduler can retry.`);
+        console.error(`Unhandled failure processing ${label}:`, error);
+        await send_discord_message(`Posting Answers for ${label} threw: ${error.message} - nothing was posted, answering 503 so the scheduler can retry.`);
         return res.status(503).send({ error: error.message, retryable: true });
     }
     
@@ -203,13 +209,21 @@ app.post('/post_answers', async (req, res) => {
     }
     
     for (const message of failures) {
-        await send_discord_message(`Posting Answers for ${puzzle_type}: ${message}`);
+        await send_discord_message(`Posting Answers for ${label}: ${message}`);
     }
-    
+
+    // A narrowed job whose keys the module left out on purpose, with no error (the Gamedle event
+    // outside its window), has nothing to do today. Without this it would 503 and alert daily.
+    if (only && collectedNothing(answer_data) && !failures.length
+        && !only.some(key => Object.hasOwn(answer_data ?? {}, key))) {
+        console.log(`  ${label}: nothing scheduled today`);
+        return res.status(200).send({ skipped: only });
+    }
+
     // Posting an empty payload only earns a WordPress rejection and a second, misleading alert,
     // so stop here instead and let the caller come back.
     if (collectedNothing(answer_data)) {
-        await send_discord_message(`Posting Answers for ${puzzle_type} returned no data - nothing was posted, answering 503 so the scheduler can retry.`);
+        await send_discord_message(`Posting Answers for ${label} returned no data - nothing was posted, answering 503 so the scheduler can retry.`);
         return res.status(503).send({ error: 'no answers collected', type: puzzle_type, retryable: true });
     }
     

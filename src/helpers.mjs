@@ -59,6 +59,29 @@ export async function proxyWebsite( fetch_url ) {
     const data = await response.text();
     return data;
 }
+
+/**
+ * Validates an `only` list for a module that fans out to several result keys.
+ *
+ * A Cloud Scheduler job narrowed to one key would otherwise post nothing, quietly, if its key were
+ * misspelled, so an unknown key throws and the route answers 503 with an alert.
+ *
+ * @param {string[]|null} only - Result keys to keep, or null for all of them.
+ * @param {string[]} keys - Every key the module can produce.
+ * @param {string} label - Puzzle name, used in the error message.
+ * @returns {(key: string) => boolean} Whether a key was asked for.
+ */
+export function selectedKeys( only, keys, label ) {
+
+    const unknown = ( only ?? [] ).filter( key => !keys.includes( key ) );
+
+    if ( unknown.length ) {
+        throw new Error( `unknown ${label} key(s): ${unknown.join(', ')} (expected one of ${keys.join(', ')})` );
+    }
+
+    return key => !only || only.includes( key );
+}
+
 /**
  * Runs fetchOne(i) up to number_to_get times, keeping whatever it collects.
  *

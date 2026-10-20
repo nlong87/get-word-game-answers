@@ -3,7 +3,8 @@ import {
     collectAnswers,
     convertDateForSQL,
     getCurrentDayInTimezone,
-    getSpecificDay
+    getSpecificDay,
+    selectedKeys
 } from "./helpers.mjs";
 
 /*
@@ -232,7 +233,14 @@ async function formatAnswer( mode, board ) {
     return await resolveName( mode, board );
 }
 
-export async function getAnswers( date_string, number_to_get ) {
+/**
+ * @param {string[]|null} only - Modes to fetch (e.g. ['gamedle-event']), or null for all six. Each
+ *                               mode has its own Cloud Scheduler job, so a failed mode can be retried
+ *                               without re-posting the others.
+ */
+export async function getAnswers( date_string, number_to_get, only = null ) {
+
+    const wanted = selectedKeys( only, Object.keys( Config.modes ), 'gamedle' );
 
     let date;
     if ( date_string === null ) {
@@ -246,6 +254,10 @@ export async function getAnswers( date_string, number_to_get ) {
     let results = {};
 
     for ( const [key, mode] of Object.entries( Config.modes ) ) {
+
+        if ( !wanted( key ) ) {
+            continue;
+        }
 
         // A backfill that starts before the event's day 1 still overlaps it, so start the event's
         // batch at day 1 (with its own dates) rather than skipping it.

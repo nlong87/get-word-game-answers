@@ -2,7 +2,8 @@ import fetch from "node-fetch";
 import {
     getCurrentDayInTimezone,
     getSpecificDay,
-    scheduleForSite
+    scheduleForSite,
+    selectedKeys
 } from "./helpers.mjs";
 
 /*
@@ -307,7 +308,13 @@ const formatters = {
     })
 };
 
-export async function getAnswers( date_string, number_to_get ) {
+/**
+ * @param {string[]|null} only - Games to fetch (e.g. ['linkedin-wend']), or null for all eight.
+ */
+export async function getAnswers( date_string, number_to_get, only = null ) {
+
+    const wanted = selectedKeys( only, Object.keys( Config.games ), 'linkedin' );
+    const games = Object.entries( Config.games ).filter( ([key]) => wanted( key ) );
 
     const today = getCurrentDayInTimezone(Config.tz);
     const date = date_string === null ? today : getSpecificDay(date_string);
@@ -317,11 +324,11 @@ export async function getAnswers( date_string, number_to_get ) {
     // Only today is ever served, so any other date (or a zero-length request) has nothing to fetch.
     // Without a session no game can be fetched, so that failure throws once for the whole run
     // rather than raising eight identical alerts.
-    const session = number_to_get > 0 && date.equals( today ) ? await getSession() : null;
+    const session = number_to_get > 0 && games.length && date.equals( today ) ? await getSession() : null;
 
     let results = {};
 
-    for ( const [key, game] of Object.entries( Config.games ) ) {
+    for ( const [key, game] of games ) {
 
         const puzzleNumber = game.number + diff;
         let answers = [];

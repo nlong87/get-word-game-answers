@@ -29,7 +29,7 @@ An Express server that scrapes/derives upcoming answers for ~25 daily word games
 Request flow:
 
 ```
-POST /post_answers?type=<puzzle>&amount=<n>   (src/index.js)
+POST /post_answers?type=<puzzle>&amount=<n>[&only=<key>,...]   (src/index.js)
   -> process_answers()   (src/process.mjs) switch on puzzle type
   -> get_answers()       (src/get-answers.mjs) switch again, dispatch to the module
   -> <puzzle>.mjs        getAnswers(date_string, number_to_get)
@@ -37,6 +37,12 @@ POST /post_answers?type=<puzzle>&amount=<n>   (src/index.js)
 ```
 
 The two switch statements are redundant but both must be updated to add a puzzle. `get-answers.mjs` is also where a single type fans out to multiple result keys (e.g. `nerdle` produces `nerdle`, `nerdle-mini`, `nerdle-micro`, `nerdle-maxi`, and `quordle` produces `quordle`, `quordle-chill`, `quordle-extreme`) or where the key is renamed.
+
+`only` (the route's `?only=`, the CLI's `--only`) narrows a fan-out type to the listed keys.
+`gamedle` and `linkedin` take it as a third `getAnswers` argument and fetch only those keys, throwing
+on an unknown one. For every other type, `process_answers` trims the result afterwards. A narrowed
+route call that comes back with none of its keys and no error (the Gamedle event outside its window)
+answers `200 {skipped}` rather than 503.
 
 ### Response status and retries
 
@@ -50,9 +56,9 @@ route's status code is a retry signal:
   safely idempotent, so these must not be retried.
 
 Retries themselves are Cloud Scheduler's job, configured per job rather than in code: the
-`Parseword`, `Scrandle`, `Batter-Up` and `LinkedIn` jobs run `--max-retry-attempts=3 --min-backoff=20m
---max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`; LinkedIn's job is
-created whole by `npm run scheduler:linkedin`), giving attempts at
+`Parseword`, `Scrandle`, `Batter-Up`, `LinkedIn` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
+--max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`; the LinkedIn and Gamedle
+jobs are created whole by `npm run scheduler:linkedin` and `npm run scheduler:gamedle`), giving attempts at
 roughly +0, +20, +40 and +60 minutes.
 Every other job still has `retryCount: 0`, so a 503 there is just a failed execution in the
 scheduler's logs. Each failed attempt also sends its own Discord alert.
@@ -204,6 +210,13 @@ Ribbon "Guess the Breast" event), merged like `nyt-bonus`. Each mode is `POST /t
   2.5 s apart and retried with backoff. A daily run takes ~30 s.
 - The event counts days 1..36 from 2026-09-25 and its key is omitted outside that window.
 - The day resets at midnight UTC-3.
+- **One scheduler job per mode** (`Gamedle-Cover` ... `Gamedle-Event`, 03:01-03:11 UTC, two minutes
+  apart for the burst limit), each posting `type=gamedle&only=gamedle-<mode>`. A single job can't
+  retry safely: when one mode failed, the other five had already posted, so it answered 200. A
+  narrowed job's 503 means its one mode collected nothing, and the scheduler retries just that.
+  `npm run scheduler:gamedle` creates them and pauses the old all-modes `Gamedle` job. Delete
+  `Gamedle-Event` once the event is over (after 2026-10-30); until then it answers `200 {skipped}`.
+  To re-post one mode by hand: `node src/cli.mjs gamedle --amount 1 --post --only gamedle-event`.
 
 ### LinkedIn (`src/linkedin.mjs`)
 

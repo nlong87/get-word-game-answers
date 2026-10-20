@@ -28,7 +28,11 @@ import { getAnswers as weaver} from './weaver.mjs';
 import { getAnswers as weaverX} from './weaver-x.mjs';
 import { getAnswers as wordle } from './wordle.mjs';
 
-export async function get_answers(puzzle, start_date, amount_to_return) {
+/*
+`only` narrows a type that fans out to several keys (gamedle, linkedin) to the listed ones, so they
+are the only ones fetched. Other types ignore it.
+*/
+export async function get_answers(puzzle, start_date, amount_to_return, only = null) {
     
     let answers = {};
     
@@ -52,7 +56,7 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
             break;
         case 'gamedle':
             // Six daily modes from one site; merge their keys in, as nyt-bonus does.
-            await gamedle(start_date, amount_to_return).then(r => Object.assign(answers, r));
+            await gamedle(start_date, amount_to_return, only).then(r => Object.assign(answers, r));
             break;
         case 'harmonies':
             await harmonies(start_date, amount_to_return).then(r => answers[puzzle] = r);
@@ -68,7 +72,7 @@ export async function get_answers(puzzle, start_date, amount_to_return) {
             break;
         case 'linkedin':
             // Eight LinkedIn games from one guest session; merge their keys in, as nyt-bonus does.
-            await linkedin(start_date, amount_to_return).then(r => Object.assign(answers, r));
+            await linkedin(start_date, amount_to_return, only).then(r => Object.assign(answers, r));
             break;
         case 'marveldle':
             await marveldle().then(r => answers[puzzle] = r);
