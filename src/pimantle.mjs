@@ -14,10 +14,25 @@ const Config = {
     },
     tz: 'Etc/GMT-7'
 }
+/*
+Loaded on first use rather than at import. Every type imports this module through get-answers.mjs,
+so a top-level fetch that failed (tryhardguides.com's bot check answers 403 with an HTML page) took
+down every puzzle, not just Pimantle.
+*/
 let wordList;
-await fetch("https://tryhardguides.com/wp-content/plugins/try-hard-core/media/pimantle-word-list.json")
-    .then(res => res.text())
-    .then(data => wordList = JSON.parse(data).answers);
+
+async function getWordList() {
+
+    if ( !wordList ) {
+        const response = await fetch("https://tryhardguides.com/wp-content/plugins/try-hard-core/media/pimantle-word-list.json");
+        if ( !response.ok ) {
+            throw new Error( `word list: HTTP ${response.status}` );
+        }
+        wordList = ( await response.json() ).answers;
+    }
+
+    return wordList;
+}
 
 
 async function getAnswer( puzzleNumber ) {
@@ -36,7 +51,7 @@ async function getAnswer( puzzleNumber ) {
 
     let index = dataView.getUint32(offset, true);
 
-    return wordList[index][0];
+    return ( await getWordList() )[index][0];
 
 }
 
