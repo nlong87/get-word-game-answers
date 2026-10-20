@@ -108,7 +108,7 @@ export async function post_data(data) {
     
 }
 
-async function send_discord_message(message) {
+export async function send_discord_message(message) {
     
     const discord_url = process.env.DISCORD_WEBHOOK;
     

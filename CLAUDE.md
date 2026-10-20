@@ -10,6 +10,7 @@ npm run dev        # NODE_ENV=development + node --watch
 npm run deploy     # Cloud Build image -> Cloud Run (us-west1, project tryhard-word-games)
 npm run deploy2    # Cloud Run deploy --source . (no separate build step)
 npm run logs       # tail Cloud Run logs
+npm run letroso:install-host  # register the Letroso extension's native host with Chrome (see Letroso)
 ```
 
 There is no test suite, linter, or build step. Verify a scraper by running the server and hitting it:
@@ -141,7 +142,7 @@ Multi-part answers are packed into single strings with sentinels the WordPress s
 
 Preserve the exact spacing.
 
-### How modules get their data (five strategies)
+### How modules get their data (six strategies)
 
 1. **Public JSON API** — most common (`wordle`, `connections`, `nerdle`, `contexto`, `jumble`, …) via `node-fetch`.
    `batter-up` is a variant: its CloudFront host is regexed out of the site's `assets/index-<hash>.js`
@@ -150,7 +151,7 @@ Preserve the exact spacing.
    fall back to today's file.
    `linkedin` is another: an anonymous guest session against two undocumented LinkedIn endpoints.
    See below.
-2. **Headless browser** — `letroso`, `searchle` use `launchBrowser()` from `src/browser.mjs`. These typically load the site, find the hashed `main.<hash>.js` bundle, and regex the answer array out of it; some `eval`/`Function` the matched literal.
+2. **Headless browser** — `searchle` uses `launchBrowser()` from `src/browser.mjs`. These typically load the site, find the hashed `main.<hash>.js` bundle, and regex the answer array out of it; some `eval`/`Function` the matched literal. `letroso.mjs` keeps a dormant one behind `DISABLED_PUZZLES`.
 3. **Bright Data proxy** — `parseword`, `revealed` call `proxyWebsite(url)` from `helpers.mjs` **only when `NODE_ENV === 'production'`**, and fetch directly in development. Note `proxyWebsite` returns raw text and no status code, so a proxied module has to parse (and validate) the body itself — `parseword` does this in `getAnswerJson`, which returns parsed JSON or `null` in both environments; a day that isn't published yet answers 403 with the body `Forbidden`.
 4. **Weekly index discovery** — `nyt-bonus` only. See below.
 5. **Bundled static data** — files prefixed `_` are data or vendored site logic, not scrapers: `_phrazle-answers.mjs`, `_quordle-answers.mjs`, `_semantle-child-words.mjs`, `_colordle-functions.js`. Phrazle indexes into its list by day offset (wrapping around when it runs off the end).
@@ -159,6 +160,8 @@ Preserve the exact spacing.
    each run, since Merriam-Webster edits them (a 2026-10 blacklist change altered #1719), and throws
    if it can't, rather than guess. Chill and Extreme number by days since 2024-07-29, so they share a
    number each day but not words.
+6. **Your own Chrome** — `letroso` only. An extension in an everyday Chrome captures it and a native
+   messaging host here posts it. See below.
 
 ### NYT bonus puzzles (`src/nyt-bonus.mjs`)
 
@@ -231,6 +234,41 @@ object, not a delimited string. The WordPress side has no renderer for them yet.
   were all lifted from the live site and are undocumented. Breakage surfaces as per-key alerts.
 
 `weaver.mjs` and `weaver-x.mjs` are near-duplicates differing only in anchor date, URL suffix, regex match index, and seed pairs — change them together.
+
+### Letroso (`extension/letroso`, `src/letroso-host.mjs`)
+
+Letroso reads each puzzle from Firestore (`letroso-daily-en`, doc id = puzzle number = days since
+2024-09-01) behind App Check, which rejects the REST API and automated browsers alike. So it isn't
+scraped here: `letroso` stays in `DISABLED_PUZZLES`, and its Cloud Scheduler job is paused. Instead,
+an unpacked extension in an everyday Chrome keeps today and the next `DAYS_AHEAD` (3) days posted:
+
+- Every hour, and on install, Chrome launch, a toolbar click, or wake from sleep (an overdue alarm
+  fires then), it asks the host which days in that window this `REST_ENDPOINT` hasn't been sent. It
+  captures each one in a background tab at `/en/previous/<date>#tryhard-capture=<date>`, where
+  `tap.js` taps the Firestore Listen stream (the AID=0 response) for the doc id and `answer`.
+- The page decides "today" from the *local* clock and refuses later dates ("still to come"), but
+  Firestore serves days ahead (confirmed 2026-10). So `tap.js` moves only that tab's `Date` forward to
+  the target's local midnight. Posting ahead is what makes a sleeping Mac a non-issue: it only has to
+  be awake with Chrome open at some point in the window. Each answer still goes live at its own
+  `scheduledDate`. If Firestore ever starts refusing future days, the near days fail and it alerts.
+- Each answer goes over native messaging to `src/letroso-host.mjs`, which checks the doc id against
+  `buildEnvelope()`'s number and calls `post_data()`. The host's stdout is the channel back to Chrome,
+  so it logs to `~/Library/Logs/tryhard-letroso.log` instead.
+- WordPress isn't idempotent, so the host keeps a ledger,
+  `~/Library/Application Support/tryhard-letroso/ledger.json`, keyed by `REST_ENDPOINT` host. A day is
+  recorded as `sending` before it's posted, then as `posted` or `rejected`, and is never sent to that
+  host again. Keying by host means a local test doesn't stop the production post.
+- A failed capture is retried by the next sweep. A day further out than tomorrow failing is taken to
+  be the end of what's published, and is quiet. Failing on today or tomorrow for 3 sweeps in a row
+  alerts Discord through the host. The toolbar icon's tooltip and badge show the last outcome.
+- To backfill a day outside the window, run `startRun({ date })` in the extension's service-worker
+  console, or `node src/letroso-host.mjs --date <d> --answer <word> --post` (which checks the same
+  ledger; `--force` resends).
+
+Setup: run `npm run letroso:install-host`, then load `extension/letroso` unpacked in
+chrome://extensions. The manifest's `key` pins the extension id that the host allows. The install
+writes the absolute path of the current node into the host's wrapper, so re-run it after a Node
+upgrade.
 
 ### Browser / Xvfb in production
 

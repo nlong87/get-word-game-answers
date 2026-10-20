@@ -40,7 +40,7 @@ the alert layer stays quiet about it, rather than firing "failed to return any d
 scheduled run. Remove the entry to re-enable; nothing else needs changing.
 */
 export const DISABLED_PUZZLES = {
-    'letroso': 'temporarily disabled'
+    'letroso': 'captured daily by the Chrome extension in extension/letroso (see letroso-host.mjs)'
 };
 
 export default async function process_answers(type, amount_to_return, start_date = null) {

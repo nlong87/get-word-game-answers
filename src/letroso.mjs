@@ -6,6 +6,8 @@ import {
 } from "./helpers.mjs";
 import {launchBrowser} from "./browser.mjs";
 
+// The number is also the puzzle's Firestore doc id in `letroso-daily-en` (days since 2024-09-01),
+// which letroso-host.mjs checks the extension's capture against.
 const Config = {
     number: 316,
     date: getSpecificDay('2025-07-14'),
@@ -129,6 +131,23 @@ async function getAnswerFromSite( browser, date_string ) {
     }
 }
 
+/**
+ * The envelope for consecutive daily answers starting on date_string. Shared with
+ * letroso-host.mjs, which posts the answer the Chrome extension in extension/letroso captures.
+ */
+export function buildEnvelope( date_string, answers ) {
+    
+    const date = getSpecificDay( date_string );
+    
+    return {
+        'type': 'Letroso',
+        'publishedDate': date.toString(),
+        'scheduledDate': convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m ),
+        'startingNumber': Config.number + date.since(Config.date).days,
+        'answers': answers
+    };
+}
+
 export async function getAnswers( date_string, number_to_get ) {
     
     let date;
@@ -137,11 +156,6 @@ export async function getAnswers( date_string, number_to_get ) {
     } else {
         date = getSpecificDay(date_string);
     }
-    
-    const published = date.toString();
-    const scheduled = convertDateForSQL( date.subtract({days: 1}), Config.schedule.h, Config.schedule.m );
-    const diff = date.since(Config.date).days;
-    const puzzleNumber = Config.number + diff;
     
     // One browser for the whole batch: a remote Scraping Browser session is billed per connection.
     const browser = await launchBrowser( { remote: true } );
@@ -157,13 +171,7 @@ export async function getAnswers( date_string, number_to_get ) {
         await browser.close();
     }
     
-    const result = {
-        'type': 'Letroso',
-        'publishedDate': published,
-        'scheduledDate': scheduled,
-        'startingNumber': puzzleNumber,
-        'answers': answers
-    };
+    const result = buildEnvelope( date.toString(), answers );
     
     if ( errors.length ) {
         // Non-enumerable so the diagnostic never reaches WordPress, matching how get-answers.mjs
