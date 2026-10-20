@@ -139,8 +139,9 @@ function missing( dates ) {
 }
 
 /*
-`sent` in a failed reply says whether WordPress may have the post. When it's false, nothing left this
-machine and the extension can try again; when true, the ledger has it and it won't be sent again.
+`sent` in a failed reply says whether WordPress may have the post. When it's false, nothing reached
+WordPress (it never left this machine, or the edge refused it) and the extension can try again; when
+true, the ledger has it and it won't be sent again.
 */
 async function post( { date, answer, docId } ) {
     
@@ -175,7 +176,13 @@ async function send( host, date, envelope ) {
     try {
         await post_data( { letroso: envelope } );
     } catch ( error ) {
-        // post_data() has already alerted Discord.
+        // post_data() has already alerted Discord. A post blocked in front of WordPress never
+        // reached it, so forget the day and let the next sweep send it again.
+        if ( error?.edgeBlocked ) {
+            record( host, date, null );
+            return { ok: false, sent: false, error: `Blocked before WordPress, will retry: ${error?.message ?? error}` };
+        }
+        
         record( host, date, 'rejected' );
         return { ok: false, sent: true, error: `WordPress rejected the post: ${error?.message ?? error}` };
     }
@@ -216,7 +223,7 @@ function record( host, date, status ) {
     
     ledger[host] = Object.fromEntries(
         Object.entries( { ...ledger[host], [date]: status } )
-            .filter( ( [day] ) => day >= cutoff )
+            .filter( ( [day, entry] ) => day >= cutoff && entry )
             .sort( ( a, b ) => a[0].localeCompare( b[0] ) )
     );
     

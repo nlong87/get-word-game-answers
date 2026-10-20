@@ -96,16 +96,52 @@ export async function post_data(data) {
     }).catch(async function (error) {
         // Previously this returned the error as though it were a response, so a 400 such as
         // shuffalo's empty_answers looked exactly like a successful post.
+        
+        if (isEdgeBlock(error)) {
+            const ray = error.response?.headers?.['cf-ray'];
+            const detail = `${error.status}${error.response?.headers?.['cf-mitigated'] ? ' ' + error.response.headers['cf-mitigated'] : ''}${ray ? ', cf-ray ' + ray : ''}`;
+            
+            console.error(`  Cloudflare blocked the post (${detail}) - it never reached WordPress`);
+            await send_discord_message(`Cloudflare blocked the answers post (${detail}) - it never reached WordPress, so it is safe to re-post.`);
+            
+            error.edgeBlocked = true;
+            throw error;
+        }
+        
         const code = error?.code ?? 'request_failed';
         const message = error?.message ?? String(error);
-        const status = error?.data?.status ?? '';
+        const status = error?.data?.status ?? error?.status ?? '';
         
         console.error(`  WordPress rejected the post [${code}${status ? ' ' + status : ''}]: ${message}`);
         await send_discord_message(`WordPress rejected the answers post [${code}${status ? ' ' + status : ''}]: ${message}`);
         
         throw error;
     });
+
+}
+
+/*
+A refusal from WordPress itself arrives as its JSON error body (wpapi forwards it when the body has a
+`code`). An HTTP error whose body is not that JSON came from something in front of WordPress -
+on 2026-10-20 it was Cloudflare's "Security Verification" challenge (403, `cf-mitigated: challenge`,
+an HTML page), which no Node client can pass. WordPress never saw such a request, so unlike a real
+rejection it is safe to send again.
+
+Only refusals count. A 502/504/524 can arrive after the origin has the batch and written some of it.
+*/
+const EDGE_REFUSALS = [403, 429];
+
+export function isEdgeBlock(error) {
     
+    if (!error?.status || !error?.response) {
+        return false;
+    }
+    
+    if (error.response.headers?.['cf-mitigated']) {
+        return true;
+    }
+    
+    return EDGE_REFUSALS.includes(error.status) && typeof error.response.body?.code !== 'string';
 }
 
 export async function send_discord_message(message) {
@@ -259,8 +295,13 @@ app.post('/post_answers', async (req, res) => {
         const response = await post_data(answer_data);
         res.status(200).send(response);
     } catch (error) {
-        // post_data has already alerted with the WordPress code and message. This stays 200: the
-        // batch may well have been written before the failure, and a retry would duplicate it.
+        // post_data has already alerted. A block in front of WordPress means it never saw the
+        // batch, so answer 503 and let the scheduler retry.
+        if (error?.edgeBlocked) {
+            return res.status(503).send({ error: error.message, edge_blocked: true, retryable: true });
+        }
+        // Anything else stays 200: the batch may well have been written before the failure, and a
+        // retry would duplicate it.
         res.status(200).send({ error: error?.message ?? String(error) });
     }
     

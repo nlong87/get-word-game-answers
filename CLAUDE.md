@@ -51,6 +51,13 @@ route's status code is a retry signal:
 
 - **503** — the run collected nothing, so nothing was posted. `post_data()` is skipped entirely.
   Safe to re-run, because WordPress never saw this batch.
+- **503 `edge_blocked`** — something in front of WordPress refused the post (`isEdgeBlock()` in
+  `src/index.js`: a `cf-mitigated` header, or a 403/429 whose body isn't WP's JSON error), so
+  WordPress never saw it either. This began on 2026-10-20, when BigScoots' Cloudflare started
+  serving its "Security Verification" challenge to every non-browser client. The Discord alert
+  says "Cloudflare blocked…" rather than "WordPress rejected…", and the Letroso host leaves the day
+  out of its ledger so the next sweep resends it. A 5xx is never treated this way, because the
+  origin may already have written the batch.
 - **200** — everything else, including a disabled puzzle, a short or partly blank result, and a
   WordPress rejection after a real post. Re-posting a batch WordPress has already seen is not
   safely idempotent, so these must not be retried.
