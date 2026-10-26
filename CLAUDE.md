@@ -33,7 +33,7 @@ POST /post_answers?type=<puzzle>&amount=<n>[&only=<key>,...]   (src/index.js)
   -> process_answers()   (src/process.mjs) switch on puzzle type
   -> get_answers()       (src/get-answers.mjs) switch again, dispatch to the module
   -> <puzzle>.mjs        getAnswers(date_string, number_to_get)
-  -> post_data()         WPAPI POST; Discord webhook alert on short/empty results
+  -> post_data()         WPAPI POST; the route then sends one Discord alert per outcome
 ```
 
 The two switch statements are redundant but both must be updated to add a puzzle. `get-answers.mjs` is also where a single type fans out to multiple result keys (e.g. `nerdle` produces `nerdle`, `nerdle-mini`, `nerdle-micro`, `nerdle-maxi`, and `quordle` produces `quordle`, `quordle-chill`, `quordle-extreme`) or where the key is renamed.
@@ -49,19 +49,40 @@ answers `200 {skipped}` rather than 503.
 Sources are sometimes not live yet at the scheduled minute (parseword is the usual one), so the
 route's status code is a retry signal:
 
-- **503** — the run collected nothing, so nothing was posted. `post_data()` is skipped entirely.
-  Safe to re-run, because WordPress never saw this batch.
+- **503** — the run collected nothing, so nothing was posted and `post_data()` is skipped. The
+  same goes for a post that never connected to WordPress (`ECONNREFUSED`, `ENOTFOUND`,
+  `EAI_AGAIN`, `EHOSTUNREACH`, `ENETUNREACH`; see `is_connect_failure` in `src/index.js`). Safe to
+  re-run, because WordPress never saw this batch.
 - **200** — everything else, including a disabled puzzle, a short or partly blank result, and a
-  WordPress rejection after a real post. Re-posting a batch WordPress has already seen is not
+  WordPress rejection or a connection reset partway through a post. Re-posting a batch WordPress has already seen is not
   safely idempotent, so these must not be retried.
 
 Retries themselves are Cloud Scheduler's job, configured per job rather than in code: the
-`Parseword`, `Scrandle`, `Batter-Up`, `LinkedIn` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
+`Parseword`, `Scrandle`, `Batter-Up` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
 --max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`; the LinkedIn and Gamedle
 jobs are created whole by `npm run scheduler:linkedin` and `npm run scheduler:gamedle`), giving attempts at
-roughly +0, +20, +40 and +60 minutes.
+roughly +0, +20, +40 and +60 minutes. `LinkedIn` has no retries, although `scheduler:linkedin` asks
+for them (checked 2026-10-26).
 Every other job still has `retryCount: 0`, so a 503 there is just a failed execution in the
-scheduler's logs. Each failed attempt also sends its own Discord alert.
+scheduler's logs.
+
+### Discord alerts
+
+Alerts use the crossword scheduler's ```` ```ansi ```` format: `src/discord.mjs` ports the plugin's
+`Discord_Message::build(title, tone, body, footer)`. The title is the scheduler job and attempt
+(`❌ Parseword (2/4)`), then come the puzzle date and what failed. A 503 ends with what happens
+next: `↩️` and the retry time, or `⛔` with the reason there won't be one (retries exhausted, no
+retry policy, not a scheduled run). A retry that then posts sends `✅ Parseword (2/4)`. Problems in a
+batch that still posted (an empty key, a short result, blank answers) come as one `⚠️` alert. The
+footer is the route's query string.
+
+**The attempt number comes from Cloud Scheduler, not from the request.** Each retry gets a new
+`X-CloudScheduler-ScheduleTime`, and Cloud Run keeps nothing between attempts, so
+`src/scheduler-attempt.mjs` takes the job from `X-CloudScheduler-JobName` and reads `jobs.get` (the
+retry policy and time zone). It then counts the job's latest `AttemptFinished` log entries that
+failed in a row. The runtime service account's `roles/editor` covers both. Locally it uses
+`gcloud auth print-access-token`, so a curl with that header set exercises a real lookup. If the
+lookup fails, the alert still goes out and says the retry status is unknown.
 
 ### Timezones and DST
 

@@ -117,7 +117,8 @@ async function handle( message ) {
             return await post( message );
         case 'alert': {
             const { send_discord_message } = await import( './index.js' );
-            await send_discord_message( message.message );
+            const { build } = await import( './discord.mjs' );
+            await send_discord_message( build( '\u{274C} Letroso capture failed', 'error', [ [ message.message ] ], 'letroso extension' ) );
             return { ok: true };
         }
         default:
