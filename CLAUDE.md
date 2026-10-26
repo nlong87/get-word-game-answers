@@ -58,11 +58,10 @@ route's status code is a retry signal:
   safely idempotent, so these must not be retried.
 
 Retries themselves are Cloud Scheduler's job, configured per job rather than in code: the
-`Parseword`, `Scrandle`, `Batter-Up` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
+`Parseword`, `Scrandle`, `Batter-Up`, `LinkedIn` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
 --max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`; the LinkedIn and Gamedle
 jobs are created whole by `npm run scheduler:linkedin` and `npm run scheduler:gamedle`), giving attempts at
-roughly +0, +20, +40 and +60 minutes. `LinkedIn` has no retries, although `scheduler:linkedin` asks
-for them (checked 2026-10-26).
+roughly +0, +20, +40 and +60 minutes.
 Every other job still has `retryCount: 0`, so a 503 there is just a failed execution in the
 scheduler's logs.
 
@@ -247,7 +246,7 @@ object, not a delimited string. The WordPress side has no renderer for them yet.
 
 - **Logged-out guests get the full solution, but only for today.** Neither endpoint takes a puzzle
   id or date, so there is no backfill (any other date returns empty answers) and every key is
-  `clamped`. The day resets at midnight Pacific, so the job runs at 00:10 `America/Los_Angeles`.
+  `clamped`. The day resets at midnight Pacific, so the job runs at 00:05 `America/Los_Angeles`.
 - **Session**: a plain `GET /games/queens/` sets `JSESSIONID` and friends. Every request sends the
   cookies back with `JSESSIONID` (unquoted) as `csrf-token`. No member account is involved; keep it
   that way, since playing on an account records the game.
