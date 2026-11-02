@@ -200,10 +200,9 @@ Crossword Compiler file per day, public and unauthenticated (verified against th
 2026-11-02). The files were generated in Dec 2022 and run from 2020 to at least 2031-01-01, so any
 date can be fetched ahead of time.
 
-Each answer is a structured object, not a delimited string: `{ title, givens, key, words, grid }`.
+Each answer is a structured object, not a delimited string: `{ title, givens, key, words }`.
 `key` maps every code number to its letter, and `givens` is the subset the puzzle starts with.
-`words` is every across and down word. `grid` is the board as rows, top to bottom, with each cell
-holding its code number, or `null` for a black square. As with LinkedIn, the WordPress side has no renderer for it yet.
+`words` is every across and down word. As with LinkedIn, the WordPress side has no renderer for it yet.
 The game rolls over at the player's local midnight, so `tz` is `America/New_York`, and
 `npm run scheduler:codeword` creates a daily job at 00:05 there.
 

@@ -17,10 +17,8 @@ The site shows a date, never a number, so the number is an internal count from 2
 The game rolls over at the player's local midnight; the US audience decides `tz`.
 
 Each answer is a structured object, not a delimited string:
-    { title, givens: { number: letter }, key: { number: letter }, words: [ ... ], grid: [ [ ... ] ] }
-`givens` are the letters the puzzle starts with filled in; `key` is the full solution. `grid` is
-the board as rows, top to bottom: each cell is its code number (letter = key[n]) or null for a
-black square. Every cell sharing a given's number starts filled in.
+    { title, givens: { number: letter }, key: { number: letter }, words: [ ... ] }
+`givens` are the letters the puzzle starts with filled in; `key` is the full solution.
 */
 
 const Config = {
@@ -59,37 +57,26 @@ export function parseCodeword( xml ) {
 
     const $ = cheerio.load(xml, { xmlMode: true });
 
-    const $grid = $('coded > grid').first();
-    const width = parseInt($grid.attr('width'), 10);
-    const height = parseInt($grid.attr('height'), 10);
-    if ( !(width > 0) || !(height > 0) ) throw new Error('no grid size in the file');
-
-    // grid[y][x], top to bottom: the cell's code number, or null for a black square.
-    const grid = Array.from({ length: height }, () => Array(width).fill(null));
     const cells = new Map();
     const key = {};
     const givens = {};
 
-    $grid.children('cell').each((_, el) => {
+    $('grid > cell').each((_, el) => {
         const cell = $(el);
         if ( cell.attr('type') === 'block' ) return;
 
-        const x = parseInt(cell.attr('x'), 10);
-        const y = parseInt(cell.attr('y'), 10);
         const letter = (cell.attr('solution') || '').toUpperCase();
         const number = parseInt(cell.attr('number'), 10);
-        if ( !/^[A-Z]$/.test(letter) || !Number.isInteger(number)
-            || !(x >= 1 && x <= width && y >= 1 && y <= height) ) {
+        if ( !/^[A-Z]$/.test(letter) || !Number.isInteger(number) ) {
             throw new Error(`bad cell at ${cell.attr('x')},${cell.attr('y')}`);
         }
-        grid[y - 1][x - 1] = number;
         if ( key[number] && key[number] !== letter ) {
             throw new Error(`code ${number} maps to both ${key[number]} and ${letter}`);
         }
 
         key[number] = letter;
         if ( cell.attr('hint') === 'true' ) givens[number] = letter;
-        cells.set(`${x},${y}`, letter);
+        cells.set(`${cell.attr('x')},${cell.attr('y')}`, letter);
     });
 
     const words = [];
@@ -114,8 +101,7 @@ export function parseCodeword( xml ) {
         title: $('metadata > title').first().text().trim(),
         givens: sortedByNumber(givens),
         key: sortedByNumber(key),
-        words,
-        grid
+        words
     };
 }
 
