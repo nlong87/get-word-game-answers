@@ -58,8 +58,8 @@ route's status code is a retry signal:
   safely idempotent, so these must not be retried.
 
 Retries themselves are Cloud Scheduler's job, configured per job rather than in code: the
-`Parseword`, `Scrandle`, `Batter-Up`, `LinkedIn` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
---max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`; the LinkedIn and Gamedle
+`Parseword`, `Scrandle`, `Batter-Up`, `Shuffalo`, `LinkedIn` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
+--max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`, Shuffalo's in `npm run scheduler:shuffalo`; the LinkedIn and Gamedle
 jobs are created whole by `npm run scheduler:linkedin` and `npm run scheduler:gamedle`), giving attempts at
 roughly +0, +20, +40 and +60 minutes.
 Every other job still has `retryCount: 0`, so a 503 there is just a failed execution in the
@@ -91,14 +91,15 @@ Two clocks are involved, and DST affects each one differently:
   `getCurrentDayInTimezone(Config.tz)`, so when a game resets at local midnight in a zone that
   observes DST, the job sets `--time-zone` to that zone and uses a local cron. A UTC cron that lands
   just after midnight in summer lands an hour *before* it in winter, and then reposts the previous
-  day. Batter-Up, Scrandle, Keyword, On-The-Record, Revealed, Parseword and LinkedIn do this; the
-  timezone changes for all but Batter-Up and LinkedIn are in `npm run scheduler:dst`. Avoid 01:00-03:00 local, which DST
+  day. Batter-Up, Scrandle, Keyword, On-The-Record, Revealed, Parseword, Shuffalo and LinkedIn do this; the
+  timezone changes for all but Batter-Up, Shuffalo and LinkedIn are in `npm run scheduler:dst`
+  (Shuffalo's, 03:15 `America/Los_Angeles`, is in `npm run scheduler:shuffalo`). Avoid 01:00-03:00 local, which DST
   skips or repeats. Poeltl instead takes "today" from the `day` field of its `/api/sync` response.
 - **When a post goes live** is `scheduledDate`, read as wall-clock time in WordPress's zone,
   `America/Phoenix` (`SITE_TZ` in `helpers.mjs`), which has no DST. `convertDateForSQL` writes a fixed
   Phoenix time, which is fine for games on UTC or a fixed offset. A game that goes live at local time
   in a DST zone gives `Config.schedule` a `tz` and uses `scheduleForSite(date, Config.schedule)`,
-  which converts per date (jumble, weaver, weaver-x, keyword, on-the-record, batter-up, linkedin). A multi-day
+  which converts per date (jumble, weaver, weaver-x, keyword, on-the-record, batter-up, shuffalo, linkedin). A multi-day
   batch still carries a single `scheduledDate`, so in the week that straddles a change, the later
   answers WordPress extrapolates are off by an hour.
 

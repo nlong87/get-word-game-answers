@@ -2,17 +2,19 @@ import fetch from "node-fetch";
 import {JSDOM } from "jsdom";
 import JSON5 from "json5";
 import {
-    convertDateForSQL,
     getCurrentDayInTimezone,
     getSpecificDay,
+    scheduleForSite,
 } from "./helpers.mjs";
 
 const Config = {
     number: 1,
     date: getSpecificDay('2025-10-20'),
+    // 03:15 Pacific, matching the Cloud Scheduler job (`npm run scheduler:shuffalo`).
     schedule: {
         h: 3,
-        m: 15
+        m: 15,
+        tz: 'America/Los_Angeles'
     },
     tz: 'America/Los_Angeles'
 }
@@ -97,7 +99,7 @@ export async function getAnswers( date_string, number_to_get ) {
     }
     
     const published = date.toString();
-    const scheduled = convertDateForSQL(date, Config.schedule.h, Config.schedule.m);
+    const scheduled = scheduleForSite(date, Config.schedule);
     const diff = date.since(Config.date).days;
     const puzzleNumber = Config.number + diff;
     
@@ -105,6 +107,13 @@ export async function getAnswers( date_string, number_to_get ) {
     let i = 0;
     while( i < number_to_get ) {
         const answer = await getAnswer( date.add({ days: i } ) );
+
+        // The page isn't up yet. Stop rather than push '': a run with no answers answers 503,
+        // which Cloud Scheduler retries, while a blank one is rejected by WordPress as a 200.
+        if ( answer.length === 0 ) {
+            break;
+        }
+
         answers.push( answer.join(' |~~| ') );
         i++;
     }
