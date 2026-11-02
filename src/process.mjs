@@ -4,6 +4,7 @@ import {get_answers} from "./get-answers.mjs";
 // print the list without duplicating it; add new puzzles to both.
 export const PUZZLE_TYPES = [
     'batter-up',
+    'codeword',
     'colordle',
     'connections',
     'contexto',
@@ -62,6 +63,9 @@ export default async function process_answers(type, amount_to_return, start_date
         
         case 'batter-up':
             data = await get_answers('batter-up', start_date, amount_to_return);
+            break;
+        case 'codeword':
+            data = await get_answers('codeword', start_date, amount_to_return);
             break;
         case 'colordle':
             data = await get_answers('colordle', start_date, amount_to_return);

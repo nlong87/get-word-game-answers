@@ -156,7 +156,8 @@ numbers them by weekly drop from the first drop on 2026-08-26. Scrandle displays
 its `/history` endpoint serves; it only ever publishes today, hence `clamped: true`. Batter Up
 shows `#` + `game_number` from its payload (days since 2024-02-18), and `src/batter-up.mjs` posts that
 number. The PHP plugin it replaced numbered one higher, so its older WordPress posts run +1 from the
-site. `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
+site. USA Today's Codeword shows only a date, so `src/codeword.mjs` counts days from 2026-01-01 as #1.
+`date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
 
 Dates use the Temporal polyfill via `src/helpers.mjs` (`getCurrentDayInTimezone`, `getSpecificDay`, `convertDateForSQL`, `scheduleForSite`) — not `Date`. `moment` is still a dependency but only appears in a comment.
 
@@ -178,6 +179,7 @@ Preserve the exact spacing.
    fall back to today's file.
    `linkedin` is another: an anonymous guest session against two undocumented LinkedIn endpoints.
    See below.
+   `codeword` reads XML, not JSON. See below.
 2. **Headless browser** — `searchle` uses `launchBrowser()` from `src/browser.mjs`. These typically load the site, find the hashed `main.<hash>.js` bundle, and regex the answer array out of it; some `eval`/`Function` the matched literal. `letroso.mjs` keeps a dormant one behind `DISABLED_PUZZLES`.
 3. **Bright Data proxy** — `parseword`, `revealed` call `proxyWebsite(url)` from `helpers.mjs` **only when `NODE_ENV === 'production'`**, and fetch directly in development. Note `proxyWebsite` returns raw text and no status code, so a proxied module has to parse (and validate) the body itself — `parseword` does this in `getAnswerJson`, which returns parsed JSON or `null` in both environments; a day that isn't published yet answers 403 with the body `Forbidden`.
 4. **Weekly index discovery** — `nyt-bonus` only. See below.
@@ -189,6 +191,20 @@ Preserve the exact spacing.
    number each day but not words.
 6. **Your own Chrome** — `letroso` only. An extension in an everyday Chrome captures it and a native
    messaging host here posts it. See below.
+
+### Codeword (`src/codeword.mjs`)
+
+USA Today's Codeword is Arkadium's game in an iframe, and it reads Arkadium's default feed:
+`https://ams.cdn.arkadiumhosted.com/assets/gamesfeed/codeword/daily-codeword-YYMMDD.xml`, one
+Crossword Compiler file per day, public and unauthenticated (verified against the live grid on
+2026-11-02). The files were generated in Dec 2022 and run from 2020 to at least 2031-01-01, so any
+date can be fetched ahead of time.
+
+Each answer is a structured object, not a delimited string: `{ title, givens, key, words }`.
+`key` maps every code number to its letter, and `givens` is the subset the puzzle starts with.
+`words` is every across and down word. As with LinkedIn, the WordPress side has no renderer for it yet.
+The game rolls over at the player's local midnight, so `tz` is `America/New_York`, and
+`npm run scheduler:codeword` creates a daily job at 00:05 there.
 
 ### NYT bonus puzzles (`src/nyt-bonus.mjs`)
 
