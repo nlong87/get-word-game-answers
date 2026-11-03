@@ -7,7 +7,7 @@ import {
 } from "./helpers.mjs";
 
 /*
-USA Today's Codeword (games.usatoday.com/games/codeword) is Arkadium's Codeword in an iframe, and it
+Codeword (games.usatoday.com/games/codeword) is Arkadium's Codeword in an iframe, and it
 reads the game's default feed: one Crossword Compiler XML file per day, named by YYMMDD. Checked on
 2026-11-02 by matching the grid on the site against that day's file. The files were all generated in
 Dec 2022 and run from 2020-01-01 to at least 2031-01-01 (2035 404s), so there's no publishing
