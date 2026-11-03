@@ -28,6 +28,7 @@ export const PUZZLE_TYPES = [
     'searchle',
     'semantle-junior',
     'shuffalo',
+    'spelling-bee',
     'squareword',
     'strands',
     'weaver',
@@ -135,6 +136,9 @@ export default async function process_answers(type, amount_to_return, start_date
             break;
         case 'shuffalo':
             data = await get_answers('shuffalo', start_date, amount_to_return);
+            break;
+        case 'spelling-bee':
+            data = await get_answers('spelling-bee', start_date, amount_to_return);
             break;
         case 'squareword':
             data = await get_answers('squareword', start_date, amount_to_return);

@@ -58,9 +58,9 @@ route's status code is a retry signal:
   safely idempotent, so these must not be retried.
 
 Retries themselves are Cloud Scheduler's job, configured per job rather than in code: the
-`Parseword`, `Scrandle`, `Batter-Up`, `Shuffalo`, `LinkedIn` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
---max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`, Shuffalo's in `npm run scheduler:shuffalo`; the LinkedIn and Gamedle
-jobs are created whole by `npm run scheduler:linkedin` and `npm run scheduler:gamedle`), giving attempts at
+`Parseword`, `Scrandle`, `Batter-Up`, `Shuffalo`, `LinkedIn`, `NYT-Spelling-Bee` and six `Gamedle-<Mode>` jobs run `--max-retry-attempts=3 --min-backoff=20m
+--max-backoff=20m` (Parseword's is in `npm run scheduler:parseword-retries`, Shuffalo's in `npm run scheduler:shuffalo`; the LinkedIn, NYT-Spelling-Bee and Gamedle
+jobs are created whole by `npm run scheduler:linkedin`, `npm run scheduler:spelling-bee` and `npm run scheduler:gamedle`), giving attempts at
 roughly +0, +20, +40 and +60 minutes.
 Every other job still has `retryCount: 0`, so a 503 there is just a failed execution in the
 scheduler's logs.
@@ -91,15 +91,15 @@ Two clocks are involved, and DST affects each one differently:
   `getCurrentDayInTimezone(Config.tz)`, so when a game resets at local midnight in a zone that
   observes DST, the job sets `--time-zone` to that zone and uses a local cron. A UTC cron that lands
   just after midnight in summer lands an hour *before* it in winter, and then reposts the previous
-  day. Batter-Up, Scrandle, Keyword, On-The-Record, Revealed, Parseword, Shuffalo and LinkedIn do this; the
-  timezone changes for all but Batter-Up, Shuffalo and LinkedIn are in `npm run scheduler:dst`
+  day. Batter-Up, Scrandle, Keyword, On-The-Record, Revealed, Parseword, Shuffalo, LinkedIn and NYT-Spelling-Bee do this; the
+  timezone changes for all but Batter-Up, Shuffalo, LinkedIn and NYT-Spelling-Bee are in `npm run scheduler:dst`
   (Shuffalo's, 03:15 `America/Los_Angeles`, is in `npm run scheduler:shuffalo`). Avoid 01:00-03:00 local, which DST
   skips or repeats. Poeltl instead takes "today" from the `day` field of its `/api/sync` response.
 - **When a post goes live** is `scheduledDate`, read as wall-clock time in WordPress's zone,
   `America/Phoenix` (`SITE_TZ` in `helpers.mjs`), which has no DST. `convertDateForSQL` writes a fixed
   Phoenix time, which is fine for games on UTC or a fixed offset. A game that goes live at local time
   in a DST zone gives `Config.schedule` a `tz` and uses `scheduleForSite(date, Config.schedule)`,
-  which converts per date (jumble, weaver, weaver-x, keyword, on-the-record, batter-up, shuffalo, linkedin). A multi-day
+  which converts per date (jumble, weaver, weaver-x, keyword, on-the-record, batter-up, shuffalo, linkedin, spelling-bee). A multi-day
   batch still carries a single `scheduledDate`, so in the week that straddles a change, the later
   answers WordPress extrapolates are off by an hour.
 
@@ -157,6 +157,10 @@ its `/history` endpoint serves; it only ever publishes today, hence `clamped: tr
 shows `#` + `game_number` from its payload (days since 2024-02-18), and `src/batter-up.mjs` posts that
 number. The PHP plugin it replaced numbered one higher, so its older WordPress posts run +1 from the
 site. USA Today's Codeword shows only a date, so `src/codeword.mjs` counts days from 2026-01-01 as #1.
+NYT Spelling Bee shows no number and its payload `id` jumps around, so `src/spelling-bee.mjs` keeps the
+numbering of the PHP plugin it replaced: days from 2023-05-26 as #1. Its `scheduledDate` is 00:01
+Pacific on the puzzle's own day, not the day before. Its API leaves the pangrams out of `answers`, so
+they are put back at the front to match the plugin's string.
 `date_string === null` means "today in `Config.tz`"; otherwise it's an explicit ISO date used for backfills.
 
 Dates use the Temporal polyfill via `src/helpers.mjs` (`getCurrentDayInTimezone`, `getSpecificDay`, `convertDateForSQL`, `scheduleForSite`) — not `Date`. `moment` is still a dependency but only appears in a comment.

@@ -23,6 +23,7 @@ import { getAnswers as scrandle } from './scrandle.mjs';
 import { getAnswers as searchle } from './searchle.mjs';
 import { getAnswers as semantle_junior} from './semantle-junior.mjs';
 import { getAnswers as shuffalo } from './shuffalo.mjs';
+import { getAnswers as spellingBee } from './spelling-bee.mjs';
 import { getAnswers as squareword } from './squareword.mjs';
 import { getAnswers as strands } from './strands.mjs';
 import { getAnswers as weaver} from './weaver.mjs';
@@ -126,6 +127,9 @@ export async function get_answers(puzzle, start_date, amount_to_return, only = n
             break;
         case 'shuffalo':
             await shuffalo( start_date, amount_to_return).then(r => answers[puzzle] = r);
+            break;
+        case 'spelling-bee':
+            await spellingBee(start_date, amount_to_return).then(r => answers[puzzle] = r);
             break;
         case 'squareword':
             await squareword(start_date, amount_to_return).then(r => answers[puzzle] = r);
